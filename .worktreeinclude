@@ -1,0 +1,3 @@
+# Untracked files every factory worktree needs, copied by `job start` (gitignore syntax).
+# This test repo needs none. Example:
+# .env

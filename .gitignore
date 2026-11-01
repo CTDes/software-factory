@@ -1,0 +1,13 @@
+# software factory
+factory/jobs/
+.claude/worktrees/
+
+# python
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
