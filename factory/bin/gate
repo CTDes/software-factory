@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""factory/bin/gate — see factory/DESIGN.md. Logic lives in factory/lib/."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.cli import gate_main  # noqa: E402
+
+sys.exit(gate_main())

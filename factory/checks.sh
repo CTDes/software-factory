@@ -7,6 +7,8 @@
 # with the job's worktree as cwd), not against the directory this script lives in.
 set -euo pipefail
 
+# Never reuse bytecode: same-size edits within one second can otherwise run a stale .pyc.
+export PYTHONDONTWRITEBYTECODE=1
 PYTHON="${PYTHON:-python3}"
 VENV=".venv"
 STAMP="$VENV/.requirements.sha256"

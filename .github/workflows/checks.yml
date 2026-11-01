@@ -17,3 +17,15 @@ jobs:
           python-version: "3.12"
       - name: factory/checks.sh
         run: factory/checks.sh
+
+  factory-tests:
+    name: factory-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: factory unit tests (no network, fake GitHub)
+        run: python -m unittest discover -s factory/tests -t factory/tests
