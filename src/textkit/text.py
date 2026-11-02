@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 
@@ -50,3 +51,10 @@ def truncate(text: str, limit: int, suffix: str = "…") -> str:
 def initials(name: str) -> str:
     """Return the uppercase initials of a name: ``"ada lovelace"`` -> ``"AL"``."""
     return "".join(word[0].upper() for word in _WORD_RE.findall(name))
+
+
+def reading_time(text: str, wpm: int = 200) -> int:
+    """Estimated reading minutes, rounded up; 0 for text without words."""
+    if wpm <= 0:
+        raise ValueError("wpm must be > 0")
+    return math.ceil(word_count(text) / wpm)
