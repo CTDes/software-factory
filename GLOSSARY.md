@@ -8,3 +8,4 @@
 | suffix | String appended by `truncate` to signal cut text; default `…` (one character) |
 | initials | First letter of each word, uppercased, accents kept |
 | reading time | Minutes to read a text: `ceil(word_count / wpm)`, 0 for text without words |
+| sentence | Segment of text ending in a run of `.`, `!` or `?` (a run counts as one end); the unterminated tail counts too. A segment counts only if it contains a word |

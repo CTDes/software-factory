@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 _WORD_RE = re.compile(r"[^\W_]+(?:['\u2019-][^\W_]+)*", re.UNICODE)
+_SENTENCE_END_RE = re.compile(r"[.!?]+")
 _NON_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -58,3 +59,12 @@ def reading_time(text: str, wpm: int = 200) -> int:
     if wpm <= 0:
         raise ValueError("wpm must be > 0")
     return math.ceil(word_count(text) / wpm)
+
+
+def sentence_count(text: str) -> int:
+    """Count sentences: segments ending in a run of ``.``, ``!`` or ``?``.
+
+    A segment only counts if it contains a word; the unterminated tail counts
+    under the same rule.
+    """
+    return sum(1 for segment in _SENTENCE_END_RE.split(text) if _WORD_RE.search(segment))
