@@ -185,6 +185,7 @@ def advance(ctx: Ctx, job: Job) -> str:
         if stage not in ("intake", "build", "review"):
             raise
         job["contract_failures"] = int(job.get("contract_failures") or 0) + 1
+        job.log_event(stage, stage, f"contract failure {job['contract_failures']}: {exc}")
         if job["contract_failures"] < MAX_CONTRACT_FAILURES:
             job.save()
             raise FactoryError(

@@ -68,6 +68,10 @@ class NextTest(FactoryTestCase):
             (r["agent"], r["model"], r["name"]), ("reviewer", "sonnet", f"reviewer-{job.id}-r1")
         )
         self.assertIn("round-1/review.md", r["prompt"])
+        self.write_review(job, "CHANGES")
+        self.advance(job)
+        [b2] = machine.next_actions(self.ctx)
+        self.assertIn("se archivó en round-1/build.md", b2["prompt"])
 
     def test_only_filters_by_job_or_issue(self) -> None:
         self.new_job(12)

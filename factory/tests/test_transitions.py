@@ -52,6 +52,7 @@ class IntakeTransitions(FactoryTestCase):
         with self.assertRaises(FactoryError) as first:
             self.advance(job)
         self.assertIn("plan.md:1", str(first.exception))
+        self.assertIn("contract failure 1", job.file("events.log").read_text())
         self.assertEqual(self.job(12).stage, "intake")
         # the orchestrator re-sends the error to the planner once; it fails again
         job = self.advance(job)
