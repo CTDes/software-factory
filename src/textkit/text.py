@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 _WORD_RE = re.compile(r"[^\W_]+(?:['\u2019-][^\W_]+)*", re.UNICODE)
+_SENTENCE_END_RE = re.compile(r"[.!?]+")
 _NON_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -34,7 +35,7 @@ def word_count(text: str) -> int:
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
     """Shorten ``text`` to at most ``limit`` characters, suffix included.
 
-    Cuts at the last word boundary that fits. Text that already fits is
+    Cuts at the last word boundary that fits (any whitespace character). Text that already fits is
     returned unchanged.
     """
     if limit < len(suffix):
@@ -43,8 +44,10 @@ def truncate(text: str, limit: int, suffix: str = "…") -> str:
         return text
     room = limit - len(suffix)
     cut = text[:room]
-    if room < len(text) and not text[room].isspace() and " " in cut:
-        cut = cut[: cut.rfind(" ")]
+    if room < len(text) and not text[room].isspace():
+        last = max((i for i, ch in enumerate(cut) if ch.isspace()), default=-1)
+        if last >= 0:
+            cut = cut[:last]
     return cut.rstrip() + suffix
 
 
@@ -63,3 +66,14 @@ def reading_time(text: str, wpm: int = 200) -> int:
 def normalize(text: str) -> str:
     """Return ``text`` in Unicode NFKC form, with no other transformation."""
     return unicodedata.normalize("NFKC", text)
+
+
+def sentence_count(text: str) -> int:
+    """Count sentences: segments ending in a run of ``.``, ``!`` or ``?``.
+
+    A segment only counts if it contains a word; the unterminated tail counts
+    under the same rule.
+
+    Example: ``sentence_count("Hola. ¿Qué tal?! Bien")`` -> ``3``.
+    """
+    return sum(1 for segment in _SENTENCE_END_RE.split(text) if _WORD_RE.search(segment))

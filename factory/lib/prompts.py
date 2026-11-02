@@ -40,11 +40,17 @@ def build(job: Job) -> str:
         if feedback
         else "- Primera ronda: no hay feedback."
     )
+    out_note = (
+        f"el de la ronda anterior se archivó en round-{job['round']}/build.md: "
+        "escribe uno nuevo y completo, con evidencia para TODOS los criterios del plan"
+        if job["round"] > 0
+        else "créalo"
+    )
     return f"""{_header(job, "build")}
 - Rondas hechas: {job["round"]} de {job.cfg["max_rounds"]}
 - Plan: {job.file("plan.md")}
 {fb}
-- Salida: {job.file("build.md")} (sobrescríbelo)
+- Salida: {job.file("build.md")} ({out_note})
 
 Cada comando de Bash empieza por `cd {job.worktree} && `. Antes de READY, árbol limpio y
 `cd {job.worktree} && factory/checks.sh` en verde. Responde con una sola línea."""
