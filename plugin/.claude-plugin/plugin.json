@@ -1,6 +1,6 @@
 {
   "name": "software-factory",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Turns labelled GitHub issues and approved specs into reviewed, gated PRs with three agents (planner, builder, reviewer) and two deterministic scripts (factory-job, factory-gate).",
   "author": { "name": "CTDes" },
   "repository": "https://github.com/CTDes/software-factory",

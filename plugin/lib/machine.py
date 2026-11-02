@@ -721,6 +721,7 @@ def start(ctx: Ctx, job: Job) -> str:
     job["claim"] = {"action": action["action"], "at": now()}
     if action["kind"] == "agent":
         job["agent"] = action["name"]
+    job.log_event(job.stage, job.stage, f"start {action['action']}")
     job.save()
     return f"{job.id} started {action['action']}"
 

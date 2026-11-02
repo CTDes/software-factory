@@ -153,8 +153,11 @@ class Recording(EmitterTestCase):
         job = self.advance(job)
         queued = self.outbox()
         self.assertEqual(
-            [(e["from"], e["to"]) for e in queued], [("(new)", "intake"), ("intake", "build")]
+            [(e["from"], e["to"], e["reason"]) for e in queued][:2],
+            [("(new)", "intake", "created from #12"), ("intake", "intake", "start plan")],
         )
+        self.assertEqual(queued[1]["job"]["claim"]["action"], "plan")
+        self.assertEqual((queued[2]["from"], queued[2]["to"]), ("intake", "build"))
         last = queued[-1]
         self.assertEqual(last["machine"], "test-mac")
         self.assertEqual(last["job"]["stage"], "build")
@@ -286,7 +289,7 @@ class Backfill(EmitterTestCase):
         copies = self.outbox()
         self.assertEqual(queued, len(live))
         self.assertEqual([e["id"] for e in copies], [e["id"] for e in live])
-        self.assertEqual([e["job"] is not None for e in copies], [False, True])
+        self.assertEqual([e["job"] is not None for e in copies], [False, False, True])
         self.assertEqual(copies[-1]["job"]["stage"], "build")
 
 

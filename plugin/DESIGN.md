@@ -363,6 +363,8 @@ Event, schema 1:
 - `repo` is `owner/name` from `origin`, or the folder name without a remote.
 - `ts`, `from`, `to` and `reason` are exactly the `events.log` line.
 - `from` equal to `to` marks a note inside a stage (contract failure, released claim…).
+  `job start` logs `start <action>` with the claim in the snapshot, so a viewer can tell an
+  agent at work from a job waiting in its stage.
 - `job` is null on backfilled events except the last one of each job, which carries the current
   `job.json`. A collector keeps, per `repo` + `job_id`, the snapshot with the latest `ts`.
 - Consumers ignore unknown fields and unknown stages; a new required field means `schema: 2`.
@@ -641,6 +643,7 @@ before it was applied.
   second plugin in every repository, because repositories on other machines must report too and
   GitHub labels alone cannot tell build, gate and review apart. Built by hand, not by the
   factory: `plugin/**` is a protected path in this repository.
+- 0.3.1, `job start` writes a `start <action>` note to `events.log` (and emits it).
 
 ## References
 
