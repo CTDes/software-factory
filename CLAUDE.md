@@ -1,7 +1,7 @@
 # textkit
 
 Small Python text-utilities library (`src/textkit/`). It exists to exercise the software factory
-described in `factory/DESIGN.md`; keep it small and well tested.
+described in `plugin/DESIGN.md` (packaged as the `software-factory` plugin in `plugin/`); keep it small and well tested.
 
 ## Setup and validation
 
