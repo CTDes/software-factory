@@ -32,6 +32,11 @@ def word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
 
 
+def unique_words(text: str) -> int:
+    """Count distinct words after casefolding; same word definition as word_count."""
+    return len({w.casefold() for w in _WORD_RE.findall(text)})
+
+
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
     """Shorten ``text`` to at most ``limit`` characters, suffix included.
 
@@ -77,3 +82,52 @@ def sentence_count(text: str) -> int:
     Example: ``sentence_count("Hola. ¿Qué tal?! Bien")`` -> ``3``.
     """
     return sum(1 for segment in _SENTENCE_END_RE.split(text) if _WORD_RE.search(segment))
+
+
+def char_count(text: str) -> int:
+    """Count characters (code points) in ``text`` that are not whitespace.
+
+    Example: ``char_count(" a b\\tc\\n1!")`` -> ``5``.
+    """
+    return sum(1 for ch in text if not ch.isspace())
+
+
+def text_stats(text: str) -> dict[str, int]:
+    """Collect basic metrics of ``text`` in a plain dict.
+
+    Keys: ``words``, ``chars``, ``unique_words`` and ``sentences``.
+
+    Example: ``text_stats("Hola hola. Adiós!")`` ->
+    ``{"words": 3, "chars": 15, "unique_words": 2, "sentences": 2}``.
+    """
+    return {
+        "words": word_count(text),
+        "chars": char_count(text),
+        "unique_words": unique_words(text),
+        "sentences": sentence_count(text),
+    }
+
+
+def longest_word(text: str) -> str:
+    """Return the longest word in ``text`` (first one on ties), or ``""`` if there are none.
+
+    Example: ``longest_word("¡Extraordinario!")`` -> ``"Extraordinario"``.
+    """
+    return max(_WORD_RE.findall(text), key=len, default="")
+
+
+def format_stats(text: str) -> str:
+    """Return a four-line human-readable report of ``text_stats(text)``.
+
+    Lines (joined by ``\\n``, no trailing newline): ``Palabras``, ``Caracteres``,
+    ``Palabras únicas`` and ``Frases``.
+    """
+    stats = text_stats(text)
+    return "\n".join(
+        [
+            f"Palabras: {stats['words']}",
+            f"Caracteres: {stats['chars']}",
+            f"Palabras únicas: {stats['unique_words']}",
+            f"Frases: {stats['sentences']}",
+        ]
+    )
