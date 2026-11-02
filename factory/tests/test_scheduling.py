@@ -69,6 +69,16 @@ class NextTest(FactoryTestCase):
         )
         self.assertIn("round-1/review.md", r["prompt"])
 
+    def test_only_filters_by_job_or_issue(self) -> None:
+        self.new_job(12)
+        job13 = self.new_job(13, title="Other")
+        self.cfg.data["concurrency"] = 2
+        self.assertEqual([a["issue"] for a in machine.next_actions(self.ctx, only="13")], [13])
+        self.assertEqual([a["issue"] for a in machine.next_actions(self.ctx, only=job13.id)], [13])
+        self.start(self.job(12))
+        self.start(job13)
+        self.assertEqual(machine.next_actions(self.ctx, only="13"), [])  # claimed
+
     def test_blocked_jobs_are_not_offered(self) -> None:
         self.new_job(12)
         self.new_job(13, title="Depends")

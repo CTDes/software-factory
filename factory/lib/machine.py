@@ -290,12 +290,22 @@ def _from_build(ctx: Ctx, job: Job) -> Transition:
     wt = job.worktree
     if not wt.is_dir():
         raise FactoryError(f"{job.id}: worktree {wt} does not exist")
+    # READY with a dirty tree or no commits is the builder breaking its contract:
+    # it goes back to the same agent once, then escalates (like a malformed header).
     if not git.is_clean(wt):
         status = git.git(wt, "status", "--short")
-        raise FactoryError(f"{job.id}: worktree has uncommitted changes:\n{status}")
+        raise contracts.ContractError(
+            job.file("build.md"),
+            1,
+            f"STATUS: READY but the worktree has uncommitted changes:\n{status}",
+        )
     git.fetch(cfg.root)
     if git.commits_ahead(wt, git.remote_ref(job["base"])) < 1:
-        raise FactoryError(f"{job.id}: no commits on top of origin/{job['base']}")
+        raise contracts.ContractError(
+            job.file("build.md"),
+            1,
+            f"STATUS: READY but there are no commits on top of origin/{job['base']}",
+        )
 
     new_round = int(job["round"]) + 1
     updates: dict[str, Any] = {"round": new_round, "pushed_at": None, "agent": None}
@@ -591,11 +601,16 @@ def live_jobs(cfg: Config) -> list[Job]:
     return [j for j in all_jobs(cfg) if j.stage not in TERMINAL]
 
 
-def next_actions(ctx: Ctx) -> list[dict[str, Any]]:
+def next_actions(ctx: Ctx, only: str | None = None) -> list[dict[str, Any]]:
+    """Runnable actions now. `only` (job id or issue number) restricts the offer to one job;
+    concurrency still counts every claimed job."""
     jobs = sorted(live_jobs(ctx.cfg), key=lambda j: j["issue"])
     claimed = [j for j in jobs if j.get("claim")]
     slots = ctx.cfg["concurrency"] - len(claimed)
     actions: list[dict[str, Any]] = []
+    if only is not None:
+        ref = only.lstrip("#")
+        jobs = [j for j in jobs if j.id == ref or str(j["issue"]) == ref]
     for job in jobs:
         if len(actions) >= slots:
             break

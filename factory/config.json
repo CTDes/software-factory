@@ -1,7 +1,7 @@
 {
   "base_branch": "main",
   "merge_method": "merge",
-  "concurrency": 1,
+  "concurrency": 2,
   "max_rounds": 3,
   "spec_branch_prefix": "spec/",
   "job_branch_prefix": "factory/",

@@ -108,12 +108,12 @@ class BuildTransitions(FactoryTestCase):
     def test_build_to_gate_requires_clean_tree_and_a_commit(self) -> None:
         job = self.to_build()
         self.write_build(job)
-        with self.assertRaisesRegex(FactoryError, "no commits"):
-            self.advance(job)
-        self.write(job.worktree, "dirty.txt", "x")
-        with self.assertRaisesRegex(FactoryError, "uncommitted"):
+        with self.assertRaisesRegex(FactoryError, r"(?s)no commits.*send this error back"):
             self.advance(job)
         self.assertEqual(self.job(12).stage, "build")
+        self.write(job.worktree, "dirty.txt", "x")
+        job = self.advance(job)  # second contract failure escalates
+        self.assertEqual(job.stage, "needs-human")
 
     def test_second_round_reuses_pr(self) -> None:
         job = self.to_gate()

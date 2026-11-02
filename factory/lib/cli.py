@@ -87,6 +87,7 @@ def job_main(argv: Sequence[str] | None = None) -> int:
     sp.add_argument("issue", type=int)
     n = sub.add_parser("next")
     n.add_argument("--json", action="store_true")
+    n.add_argument("--only", metavar="id|issue", help="offer actions for this job only")
     for name in ("start", "advance", "merge"):
         sub.add_parser(name).add_argument("id")
     sub.add_parser("rework").add_argument("ref", metavar="id|issue")
@@ -108,7 +109,7 @@ def job_main(argv: Sequence[str] | None = None) -> int:
         elif args.cmd == "spec":
             raise FactoryError("`job spec create` arrives in phase 5")
         elif args.cmd == "next":
-            actions = machine.next_actions(ctx)
+            actions = machine.next_actions(ctx, only=args.only)
             if args.json:
                 print(json.dumps(actions, indent=2, ensure_ascii=False))
             elif not actions:
