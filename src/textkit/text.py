@@ -90,3 +90,19 @@ def char_count(text: str) -> int:
     Example: ``char_count(" a b\\tc\\n1!")`` -> ``5``.
     """
     return sum(1 for ch in text if not ch.isspace())
+
+
+def text_stats(text: str) -> dict[str, int]:
+    """Collect basic metrics of ``text`` in a plain dict.
+
+    Keys: ``words``, ``chars``, ``unique_words`` and ``sentences``.
+
+    Example: ``text_stats("Hola hola. Adiós!")`` ->
+    ``{"words": 3, "chars": 15, "unique_words": 2, "sentences": 2}``.
+    """
+    return {
+        "words": word_count(text),
+        "chars": char_count(text),
+        "unique_words": unique_words(text),
+        "sentences": sentence_count(text),
+    }

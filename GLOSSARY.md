@@ -12,3 +12,4 @@
 | sentence | Segment of text ending in a run of `.`, `!` or `?` (a run counts as one end); the unterminated tail counts too. A segment counts only if it contains a word |
 | char count | Number of code points in a text for which `str.isspace()` is false (punctuation and digits count; combining marks count individually) |
 | unique words | Number of distinct words in a text after `casefold()`, using the same definition of *word* |
+| text stats | Plain `dict[str, int]` with keys `words`, `chars`, `unique_words`, `sentences`, holding `word_count`, `char_count`, `unique_words` and `sentence_count` of a text |
