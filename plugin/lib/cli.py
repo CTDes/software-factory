@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from lib import config, gate, jobs, machine
+from lib import config, events, gate, jobs, machine
 from lib.github import connect
 from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, FactoryError
 
@@ -95,8 +95,12 @@ def job_main(argv: Sequence[str] | None = None) -> int:
     st = sub.add_parser("status")
     st.add_argument("id", nargs="?")
     sub.add_parser("summary")
+    ev = sub.add_parser("events", help="send transitions to a collector (FACTORY_EVENTS_URL)")
+    ev.add_argument("subcmd", choices=["status", "flush", "backfill"])
     args = p.parse_args(argv)
 
+    if args.cmd == "events":
+        return _events_main(args.subcmd)
     try:
         ctx = _ctx()
         cfg = ctx.cfg
@@ -146,7 +150,51 @@ def job_main(argv: Sequence[str] | None = None) -> int:
     except FactoryError as exc:
         print(f"factory-job: {exc}", file=sys.stderr)
         return exc.code
+    finally:
+        _auto_flush()
     return EXIT_OK
+
+
+def _auto_flush() -> None:
+    """Best effort, silent: a collector that is down must not change any command's outcome."""
+    if events.sink() is None:
+        return
+    try:
+        events.flush(config.load(), automatic=True)
+    except Exception:
+        pass
+
+
+def _flush_line(r: events.FlushResult) -> str:
+    parts = [f"sent {r.sent}", f"pending {r.pending}"]
+    if r.dropped:
+        parts.append(f"dropped {r.dropped} malformed")
+    if r.skipped:
+        parts.append(f"skipped: {r.skipped}")
+    if r.error:
+        parts.append(f"error: {r.error}")
+    return "events: " + ", ".join(parts)
+
+
+def _events_main(subcmd: str) -> int:
+    try:
+        cfg = config.load()
+        target = events.sink()
+        if subcmd == "status":
+            print(f"collector  {target.url if target else f'off ({events.URL_ENV} is not set)'}")
+            print(f"token      {'set' if target and target.token else 'not set'}")
+            print(f"repo       {events.repo_name(cfg.root)}")
+            print(f"machine    {events.machine_name()}")
+            print(f"pending    {events.pending(cfg)}")
+            return EXIT_OK
+        if subcmd == "backfill":
+            print(f"events: queued {events.backfill(cfg, [j.data for j in jobs.all_jobs(cfg)])}")
+        result = events.flush(cfg)
+        print(_flush_line(result))
+        return EXIT_CONDITION if result.error or (target is None) else EXIT_OK
+    except FactoryError as exc:
+        print(f"factory-job: {exc}", file=sys.stderr)
+        return exc.code
 
 
 def gate_main(argv: Sequence[str] | None = None) -> int:

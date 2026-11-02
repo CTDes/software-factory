@@ -79,6 +79,7 @@ plugin software-factory/                (installed under ~/.claude/plugins/cache
     checks.sh                            PROJECT-SPECIFIC · lint, typecheck, tests, build
     config.json                          PROJECT-SPECIFIC · see config.json
     jobs/<job-id>/                       state of each job (gitignored)
+    jobs/_events/                        outbox for the optional event emitter (see Events)
 
 ~/.claude/settings.json                  global git guardrails hook (outside the repo)
 ```
@@ -307,6 +308,7 @@ condition not met or illegal transition, 2 usage or configuration error.
 | `recover` | Releases claims left by a dead session and checks that every worktree exists and is on the branch in `job.json`. The orchestrator runs it first |
 | `status [<id>]` | Readable state of one or all jobs |
 | `summary` | Table: job, kind, stage, round, risk, PR, reason |
+| `events status\|flush\|backfill` | The optional event emitter (see Events): show the collector, repo, machine and pending count; send the outbox now; queue every job's `events.log` and send it |
 
 `job next` is what keeps the orchestrator dumb. It builds each agent's prompt from a template in
 `lib/prompts.py`, with absolute paths to the job folder and worktree, the base and the round. The
@@ -314,6 +316,56 @@ orchestrator only copies it.
 
 Every comment `factory-job` posts on GitHub starts with `[factory]` and the job id. The factory
 comments with the human's account, so this prefix is how it tells its own comments apart.
+
+### Events
+
+An optional emitter sends every transition to a collector, so a separate service (factory-office)
+can show what happens in every repository and machine. The factory never depends on it: with the
+variable unset nothing changes, and a collector that is down never blocks or fails a command.
+
+| Variable | Meaning |
+| --- | --- |
+| `FACTORY_EVENTS_URL` | The collector's events endpoint. Unset: events are off |
+| `FACTORY_EVENTS_TOKEN` | Sent as `Authorization: Bearer <token>`. One per machine |
+| `FACTORY_EVENTS_MACHINE` | Machine name in the events. Default: the hostname |
+
+- `Job.log_event` is the single point every transition goes through. Besides the `events.log`
+  line it appends the event to `factory/jobs/_events/outbox.jsonl`.
+- At the end of every `factory-job` command the outbox is flushed: `POST` of
+  `{"events": [...]}` in batches of 200, oldest first, 3 s timeout. Accepted events leave the
+  outbox; the rest wait for the next command. After a failure, automatic flushes pause for 60 s,
+  so a collector that is down costs at most one timeout per minute. `events flush` always tries.
+- One process flushes at a time (`flush.lock`); appends and rewrites take `outbox.lock`.
+- `events backfill` queues every line of every job's `events.log`. Ids are deterministic, so the
+  collector drops copies of events it already has.
+- The collector must answer 2xx only once the batch is stored, and treat `id` as idempotent.
+
+Event, schema 1:
+
+```json
+{
+  "schema": 1,
+  "id": "sha256(repo, job_id, ts, from, to, reason)[:32]",
+  "repo": "CTDes/factory-sandbox",
+  "machine": "xals-mbp",
+  "job_id": "003-population-variance-of-a-sequence-varian",
+  "kind": "ticket",
+  "issue": 3,
+  "spec": null,
+  "ts": "2026-11-02T12:15:23+01:00",
+  "from": "review",
+  "to": "ready",
+  "reason": "PASS",
+  "job": { "...": "job.json right after the transition, updated_at = ts" }
+}
+```
+
+- `repo` is `owner/name` from `origin`, or the folder name without a remote.
+- `ts`, `from`, `to` and `reason` are exactly the `events.log` line.
+- `from` equal to `to` marks a note inside a stage (contract failure, released claim…).
+- `job` is null on backfilled events except the last one of each job, which carries the current
+  `job.json`. A collector keeps, per `repo` + `job_id`, the snapshot with the latest `ts`.
+- Consumers ignore unknown fields and unknown stages; a new required field means `schema: 2`.
 
 ### factory-gate
 
@@ -476,7 +528,8 @@ without touching the rest.
 - UI or UX reviewers with a browser and per-port dev servers.
 - Fast, standard and full lanes: risk already picks models and review.
 - A `SubagentStop` hook on the builder: the gate decides.
-- Dashboards, cost per job and OpenTelemetry. `job summary` is enough for now.
+- Dashboards inside the factory, cost per job and OpenTelemetry. The factory only emits events
+  (see Events); viewing them is factory-office's job.
 - Scheduled cloud runs and nightly triage.
 - Deployment of any kind.
 - Generating the ticket graph without human approval.
@@ -583,6 +636,11 @@ before it was applied.
   `job next`, the file-contract headings, `issue.md`, `checks.md`, `merge.md`, `rework-N.md` and
   every comment and PR body the factory posts. The parser still accepts the old Spanish headings,
   ignoring case, so jobs started before the switch keep working.
+- 0.3.0, optional event emitter (Events) for factory-office, a separate service with its own
+  database that shows every repository and machine. The factory pushes events instead of a
+  second plugin in every repository, because repositories on other machines must report too and
+  GitHub labels alone cannot tell build, gate and review apart. Built by hand, not by the
+  factory: `plugin/**` is a protected path in this repository.
 
 ## References
 

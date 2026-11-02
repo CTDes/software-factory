@@ -42,6 +42,21 @@ to labels):
 - Human skills: `/software-factory:to-spec`, `/software-factory:to-tickets`,
   `/software-factory:grilling`, `/software-factory:domain-modeling`, `/software-factory:retro`.
 
+## Events (optional)
+
+The factory can send every transition to a collector such as factory-office, so one place shows
+every repository on every machine. Set it once per machine, not per repository, in
+`~/.claude/settings.json`:
+
+```json
+{ "env": { "FACTORY_EVENTS_URL": "http://127.0.0.1:8765/events", "FACTORY_EVENTS_TOKEN": "<token>" } }
+```
+
+Events wait in `factory/jobs/_events/outbox.jsonl` until the collector accepts them; a collector
+that is down never blocks the factory. `factory-job events status` shows what is configured and
+pending, and `factory-job events backfill` sends the history of the jobs a repository already has.
+Details and the event format: DESIGN.md · Events.
+
 ## Update
 
 The version in `.claude-plugin/plugin.json` gates updates: bump it to publish a change.
