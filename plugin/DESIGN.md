@@ -4,6 +4,8 @@ Nov 1, 2026 · @Xals
 
 Este documento es el encargo completo para que Claude Code construya una software factory: un sistema que convierte issues de GitHub o specs de un proyecto en código mergeado mediante tres agentes y dos scripts deterministas. Se implementa en seis fases, una por sesión, cada una verificable antes de empezar la siguiente.
 
+> **Estado (2026-11-02):** las seis fases están implementadas y verificadas. La fábrica se distribuye como el plugin `software-factory` (marketplace `ctdes-factory`). La sección *Entorno y estructura* describe el layout actual; los nombres `bin/job` y `bin/gate` del resto del documento corresponden a los ejecutables `factory-job` y `factory-gate`, y `/factory` al orquestador `/software-factory:factory`. Lo que cambió respecto a este encargo está en [Implementación: desviaciones y decisiones](#implementación-desviaciones-y-decisiones).
+
 ## Cómo usar este documento
 
 Expórtalo a Markdown y guárdalo como `factory/DESIGN.md` en un repo de pruebas pequeño (no en el proyecto real). Abre Claude Code en ese repo y pide una fase cada vez:
@@ -42,43 +44,38 @@ Principios no negociables:
 
 Requisitos de la máquina que ejecuta la fábrica: Claude Code reciente, `git` 2.40+, `python3` 3.10+ sin paquetes externos, `gh` autenticado con un usuario que pueda pushear, crear PRs y gestionar etiquetas en el repo.
 
-Todo lo que es genérico vive bajo `factory/` y `.claude/`, para poder empaquetarlo como plugin más adelante. Lo único específico de cada proyecto es `checks.sh`, `config.json` y los ficheros de contexto del repo.
+Lo genérico se distribuye como el plugin `software-factory`, instalado desde el marketplace `ctdes-factory` (el repo `CTDes/software-factory`). Lo único específico de cada proyecto es `factory/checks.sh`, `factory/config.json`, los ficheros de contexto y `.claude/settings.json`, y `factory-init` los crea.
 
 ```text
+plugin software-factory/                (instalado en ~/.claude/plugins/cache/…)
+  .claude-plugin/plugin.json             nombre y versión (la versión gobierna las actualizaciones)
+  DESIGN.md                              este documento
+  agents/planner.md, builder.md, reviewer.md   →  software-factory:planner, :builder, :reviewer
+  skills/factory/SKILL.md                orquestador /software-factory:factory
+  skills/tdd, code-review, grilling, domain-modeling, to-spec, to-tickets, retro   (Matt Pocock, MIT)
+  hooks/hooks.json, agent_guard.py       guardarraíles de los agentes (PreToolUse, por agent_type)
+  bin/factory-job                        máquina de estados; único con efectos en git remoto y GitHub
+  bin/factory-gate                       ejecuta checks.sh y comprueba rutas protegidas y evidencia
+  bin/factory-init                       prepara un repo nuevo (ficheros, settings, etiquetas)
+  lib/                                   módulos Python compartidos
+  tests/                                 tests (unittest, sin red, GitHub fake)
+  templates/                             lo que escribe factory-init
+
 <repo>/
-  CLAUDE.md                        contexto del repo: setup, cómo se valida, convenciones
-  GLOSSARY.md                      vocabulario del dominio
-  docs/adr/NNNN-*.md               decisiones de arquitectura
-  docs/architecture.md             mapa de módulos, interfaces, dependencias permitidas, propiedad de carpetas
-  .worktreeinclude                 ficheros no versionados que cada worktree necesita (.env…)
-  .gitignore                       añade factory/jobs/ y la carpeta de worktrees
-  .github/workflows/checks.yml     ejecuta factory/checks.sh; check requerido en main
-
+  CLAUDE.md                              contexto del repo: setup, cómo se valida, convenciones
+  GLOSSARY.md                            vocabulario del dominio
+  docs/adr/NNNN-*.md                     decisiones de arquitectura
+  docs/architecture.md                   mapa de módulos, interfaces, dependencias permitidas, propiedad de carpetas
+  .worktreeinclude                       ficheros no versionados que cada worktree necesita (.env…)
+  .gitignore                             añade factory/jobs/ y .claude/worktrees/
+  .github/workflows/checks.yml           ejecuta factory/checks.sh; check requerido en main
+  .claude/settings.json                  permisos pre-aprobados, marketplace y plugin activado
   factory/
-    DESIGN.md                      este documento
-    checks.sh                      ESPECÍFICO · lint, typecheck, tests, build
-    config.json                    ESPECÍFICO · ver sección config.json
-    bin/job                        máquina de estados; único con efectos en git remoto y GitHub
-    bin/gate                       ejecuta checks.sh y comprueba rutas protegidas
-    lib/                           módulos Python compartidos por job y gate
-    tests/                         tests de job y gate (unittest, sin red)
-    jobs/<job-id>/                 estado de cada job (gitignored)
+    checks.sh                            ESPECÍFICO · lint, typecheck, tests, build
+    config.json                          ESPECÍFICO · ver sección config.json
+    jobs/<job-id>/                       estado de cada job (gitignored)
 
-  .claude/
-    settings.json                  permisos pre-aprobados y hooks del proyecto
-    agents/planner.md
-    agents/builder.md
-    agents/reviewer.md
-    skills/factory/SKILL.md        orquestador /factory
-    skills/tdd/                    copiada de Matt Pocock (MIT)
-    skills/code-review/            copiada de Matt; referencia para el prompt del reviewer
-    skills/grilling/               copiada de Matt; uso humano, fuera del pipeline
-    skills/domain-modeling/        copiada de Matt; uso humano
-    skills/to-spec/                copiada de Matt; uso humano, adaptada (ver fase 5)
-    skills/to-tickets/             copiada de Matt; uso humano, adaptada (ver fase 5)
-    skills/retro/                  copiada de Matt; uso humano
-
-~/.claude/settings.json            hook global de guardarraíles git (fuera del repo)
+~/.claude/settings.json                  hook global de guardarraíles git (fuera del repo)
 ```
 
 Los worktrees viven en `.claude/worktrees/<job-id>/`, un directorio por job, en la rama `factory/<job-id>`.
@@ -408,3 +405,44 @@ No implementar en este encargo, aunque parezca útil. Cada punto se puede añadi
 - [mattpocock/skills](https://github.com/mattpocock/skills): skills que se copian (MIT)
 - [ZazenCodes · Software Factory v2](https://github.com/zazencodes/zazencodes-season-3/tree/main/src/software-factory-claude-code-v2): referencia de diseño de la espina; GPLv3, no copiar ficheros
 - Documentación de Claude Code: [Skills](https://code.claude.com/docs/en/skills), [Subagentes](https://code.claude.com/docs/en/sub-agents), [Hooks](https://code.claude.com/docs/en/hooks), [Plugins](https://code.claude.com/docs/en/plugins/overview), [Worktrees](https://code.claude.com/docs/en/worktrees)
+
+## Implementación: desviaciones y decisiones
+
+Registro de lo que cambió respecto al encargo, fase a fase, con el motivo. Todo se propuso al humano antes de aplicarlo.
+
+**Fase 1**
+- El repo de pruebas es público: en GitHub Free la protección de rama con check requerido solo existe en repos públicos.
+- `checks.sh` exporta `PYTHONDONTWRITEBYTECODE=1`: un `.pyc` obsoleto (mismo tamaño, mismo segundo) dio resultados falsos dos veces.
+
+**Fase 2**
+- `job merge` se implementó en la fase 2 porque sus transiciones están en la tabla de ticket.
+- Transiciones añadidas: `intake → needs-human` (el planner incumple el contrato dos veces) y `needs-human → intake` (rework de un job sin plan válido). El contador de incumplimientos vive en `job.json`, no en el orquestador.
+- `merging → build` no incrementa `round`: ya lo hace `build → gate`.
+- El builder no aplica un orden de prioridad de ficheros: `job.json` guarda en `feedback` el fichero exacto que lo devolvió a `build`, y el `build.md` anterior se archiva en `round-N/`.
+- El gate también exige evidencia para cada criterio `Cn` del plan y rechaza rutas de evidencia fuera del worktree.
+- `job create` exige la etiqueta `queue`. Los comentarios de la fábrica se reconocen por el prefijo `[factory]`, porque la fábrica comenta con la cuenta del humano.
+- `ready`/`needs-human → done` borra también la rama local y la remota del job.
+
+**Fase 3**
+- Los subagentes no tienen campo de directorio de trabajo: el prompt obliga a `cd <worktree> &&` en cada comando y el guard impide escribir fuera del worktree.
+- El campo `tools` no puede limitar Bash a ciertos comandos: el reviewer queda limitado a git de lectura por el guard.
+- `gh` se bloquea solo en los agentes, no con un `deny` de proyecto, para no romper `/to-spec` y `/to-tickets` en la sesión humana.
+- El hook global de Matt busca el texto del push en todo el comando: bloquea también mensajes de commit o scripts que lo contengan (falso positivo conocido).
+
+**Fase 4**
+- `job next --only <job|issue>` para `issue <n>` y `rework <n>`.
+- `READY` con el árbol sucio o sin commits cuenta como incumplimiento de contrato (vuelve al builder una vez y luego escala).
+- A partir de la ronda 2, el prompt del builder dice que el `build.md` anterior se archivó (un builder reanudado lo olvidó).
+- El tool Agent no tiene parámetro `name`: el orquestador reanuda builders por id con SendMessage dentro de la sesión.
+- Hueco conocido: una PR de un ticket suelto en `ready` que queda en conflicto con `main` no se detecta sola; se resuelve con `rework` y un comentario.
+
+**Fase 5**
+- Los merges a una misma rama base van en serie (`job next`/`job start`), y un push rechazado porque la base se movió libera la reclamación y deja el job en `merging` para reintentar: dos `job merge` simultáneos sobre la rama de la spec competían.
+- La review final usa la issue de la spec como criterio.
+
+**Fase 6**
+- Se empaquetó antes de terminar una spec en un proyecto real, por decisión del humano.
+- Los agentes de plugin ignoran `hooks` y `permissionMode` del frontmatter: los guardarraíles viven en `hooks/hooks.json` del plugin y el guard deduce el rol de `agent_type`; cualquier otra sesión o agente pasa sin tocar.
+- Los plugins no pueden aportar permisos: `factory-init` los escribe en `.claude/settings.json` de cada repo, junto con el marketplace (con `autoUpdate`) y el plugin activado.
+- Abrir un repo cuyo `settings.json` activa el plugin crea una instalación de ámbito proyecto además de la de usuario. Con `autoUpdate` las dos se actualizan solas; a mano, cada una con su `claude plugin update … --scope`.
+- Nombres: agentes `software-factory:<agente>`, skills `/software-factory:<skill>`, ejecutables `factory-job`, `factory-gate`, `factory-init`.

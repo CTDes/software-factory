@@ -59,6 +59,7 @@ class InitTest(unittest.TestCase):
             settings["extraKnownMarketplaces"]["ctdes-factory"]["source"]["repo"],
             "CTDes/software-factory",
         )
+        self.assertTrue(settings["extraKnownMarketplaces"]["ctdes-factory"]["autoUpdate"])
 
     def test_idempotent(self) -> None:
         self.run_init()

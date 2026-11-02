@@ -33,12 +33,20 @@ project-specific; everything else comes from the plugin.
 
 ## Update
 
+The version in `.claude-plugin/plugin.json` gates updates: bump it to publish a change.
+
+Repositories prepared with `factory-init` declare the `ctdes-factory` marketplace with
+`autoUpdate: true`, so Claude Code picks up new versions by itself a few minutes into a session
+(`Plugin updated … Run /reload-plugins to apply`). To update by hand:
+
 ```sh
 claude plugin marketplace update ctdes-factory
-claude plugin update software-factory@ctdes-factory
+claude plugin update software-factory@ctdes-factory                    # user-scope install
+claude plugin update software-factory@ctdes-factory --scope project    # run inside each repo
 ```
 
-The version in `.claude-plugin/plugin.json` gates updates: bump it to publish a change.
+Opening a repository whose `.claude/settings.json` enables the plugin creates a project-scope
+install besides your user-scope one; each is updated separately when done by hand.
 
 ## Requirements
 

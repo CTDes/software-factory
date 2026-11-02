@@ -29,7 +29,8 @@
   },
   "extraKnownMarketplaces": {
     "ctdes-factory": {
-      "source": { "source": "github", "repo": "CTDes/software-factory" }
+      "source": { "source": "github", "repo": "CTDes/software-factory" },
+      "autoUpdate": true
     }
   },
   "enabledPlugins": {
