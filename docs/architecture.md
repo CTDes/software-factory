@@ -4,8 +4,8 @@
 
 | Module | Responsibility | Public interface |
 | --- | --- | --- |
-| `textkit` (`src/textkit/__init__.py`) | Package facade; the only supported import path | re-exports `slugify`, `word_count`, `truncate`, `initials`, `reading_time` |
-| `textkit.text` (`src/textkit/text.py`) | Pure string functions | `slugify(text, max_length=None) -> str`, `word_count(text) -> int`, `truncate(text, limit, suffix="…") -> str`, `initials(name) -> str`, `reading_time(text, wpm=200) -> int` |
+| `textkit` (`src/textkit/__init__.py`) | Package facade; the only supported import path | re-exports `slugify`, `word_count`, `truncate`, `initials`, `reading_time`, `sentence_count` |
+| `textkit.text` (`src/textkit/text.py`) | Pure string functions | `slugify(text, max_length=None) -> str`, `word_count(text) -> int`, `truncate(text, limit, suffix="…") -> str`, `initials(name) -> str`, `reading_time(text, wpm=200) -> int`, `sentence_count(text) -> int` |
 
 ## Allowed dependencies
 
