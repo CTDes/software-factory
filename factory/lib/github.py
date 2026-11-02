@@ -29,6 +29,7 @@ Comment = dict[str, Any]
 class GitHub(Protocol):
     def issue(self, number: int) -> Issue: ...
     def list_issues(self, label: str) -> list[Issue]: ...
+    def list_open_issues(self) -> list[Issue]: ...
     def comment(self, number: int, body: str) -> None: ...
     def add_label(self, number: int, label: str) -> None: ...
     def remove_label(self, number: int, label: str) -> None: ...
@@ -91,14 +92,17 @@ class GhCli:
             ],
         }
 
+    def list_open_issues(self) -> list[Issue]:
+        return self._list("--state", "open")
+
     def list_issues(self, label: str) -> list[Issue]:
+        return self._list("--state", "open", "--label", label)
+
+    def _list(self, *filters: str) -> list[Issue]:
         rows = self._json(
             "issue",
             "list",
-            "--state",
-            "open",
-            "--label",
-            label,
+            *filters,
             "--limit",
             "500",
             "--json",
@@ -257,6 +261,14 @@ class FakeGitHub:
         d.setdefault("author", "someone")
         d.setdefault("url", f"https://github.com/fake/repo/issues/{number}")
         return d
+
+    def list_open_issues(self) -> list[Issue]:
+        state = self.load()
+        return [
+            self.issue(int(n))
+            for n, d in sorted(state["issues"].items(), key=lambda kv: int(kv[0]))
+            if d.get("state", "OPEN") == "OPEN"
+        ]
 
     def list_issues(self, label: str) -> list[Issue]:
         state = self.load()

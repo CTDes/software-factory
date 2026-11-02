@@ -2,7 +2,7 @@
 name: factory
 description: Software factory orchestrator. Drains GitHub issues labelled for agents through planner, builder, gate and reviewer until each job is ready for a human. Only runs when the user types /factory.
 disable-model-invocation: true
-argument-hint: "run | issue <n> | rework <n> | status | spec <n>"
+argument-hint: "run | issue <n> | spec <n> | rework <n> | status"
 allowed-tools:
   - Bash(factory/bin/job *)
   - Bash(factory/bin/gate *)
@@ -37,7 +37,7 @@ devuelves el control. Toda la lógica vive en Python, con tests. Tu valor es no 
 | `issue <n>` | `factory/bin/job status <n>`; si sale con error (no hay job), `factory/bin/job create <n>`. Luego el bucle con `ONLY=<n>` y **sin** `job queue` |
 | `rework <n>` | `factory/bin/job rework <n>` (si falla, cuenta el error y para). Luego el bucle con `ONLY=<n>` y sin `job queue` |
 | `status` | `factory/bin/job summary` y nada más |
-| `spec <n>` | Di que el nivel spec llega en la fase 5 y para |
+| `spec <n>` | `factory/bin/job status <n>`; si sale con error, `factory/bin/job spec create <n>` (si falla, cuenta el error y para: el grafo no es válido). Luego el bucle con `ONLY=<n>` **y con** `job queue` (incorpora hijos nuevos y ve PRs mergeadas). `--only` de una spec incluye sus tickets |
 
 ## Bucle
 
@@ -46,7 +46,7 @@ id del agente o de la tarea de Bash. Y una tabla **builders**: job → id del ú
 lanzaste para ese job.
 
 1. **Arranque.** `factory/bin/job recover`. Si sale con 1, imprime los problemas y para.
-   Solo en `run`: `factory/bin/job queue`.
+   Solo en `run` y `spec`: `factory/bin/job queue`.
 2. **Qué toca.** `factory/bin/job next --json` (con `--only <ONLY>` si lo hay). Si la lista está
    vacía y no hay nada en marcha: `factory/bin/job summary`, y terminas. Si está vacía pero hay
    algo en marcha: termina tu turno y espera a las notificaciones.
@@ -65,7 +65,12 @@ lanzaste para ese job.
 4. **Al terminar algo** (notificación de un agente o de una tarea de Bash):
    - Quítalo de **en marcha**.
    - Acción `merge`: `job merge` ya hizo la transición; imprime su salida y no hagas `advance`.
-   - Acción `gate`: salida 0 (PASS) o 1 (FAIL) son normales → sigue. Salida 2 → error: para.
+   - Acciones `gate` y `final-gate`: salida 0 (PASS) o 1 (FAIL) son normales → sigue con
+     `advance`. Salida 2 → error: para.
+   - La salida de `job merge` puede traer una segunda línea (`<spec> building -> final-review`):
+     imprímela tal cual.
+   - `advance` de una spec tras su `final-gate` en verde responde `… final review pending` sin
+     transición: es normal, sigue al paso 2 (la siguiente acción será la review final).
    - En los demás casos: `factory/bin/job advance <job>` e imprime la línea `<id> <de> -> <a>`.
    - Si `advance` sale con 1 y el mensaje termina en `send this error back to the same agent once`:
      envía ese mensaje entero al **mismo** agente con SendMessage, apúntalo otra vez en

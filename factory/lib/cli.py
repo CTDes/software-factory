@@ -107,7 +107,9 @@ def job_main(argv: Sequence[str] | None = None) -> int:
         elif args.cmd == "create":
             print(machine.create(ctx, args.issue))
         elif args.cmd == "spec":
-            raise FactoryError("`job spec create` arrives in phase 5")
+            from lib import spec
+
+            print(spec.create(ctx, args.issue))
         elif args.cmd == "next":
             actions = machine.next_actions(ctx, only=args.only)
             if args.json:
@@ -158,10 +160,11 @@ def gate_main(argv: Sequence[str] | None = None) -> int:
         cfg = config.load()
         job = jobs.resolve(cfg, args.id)
         if args.final:
-            raise FactoryError("`gate --final` arrives with the spec level (phase 5)")
-        if job.stage != "gate":
+            if job["kind"] != "spec" or job.stage != "final-review":
+                raise FactoryError(f"{job.id}: `gate --final` runs on a spec in 'final-review'")
+        elif job.stage != "gate":
             raise FactoryError(f"{job.id}: gate runs in stage 'gate', job is in '{job.stage}'")
-        result = gate.run_gate(cfg, job)
+        result = gate.run_gate(cfg, job, final=args.final)
     except FactoryError as exc:
         print(f"gate: {exc}", file=sys.stderr)
         return EXIT_USAGE  # 1 is reserved for a FAIL verdict

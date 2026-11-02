@@ -48,6 +48,21 @@ LEGAL: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# Spec jobs (DESIGN.md · Máquinas de estados · Spec).
+SPEC_LEGAL: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("building", "final-review"),
+        ("final-review", "ready"),
+        ("final-review", "final-build"),
+        ("final-review", "needs-human"),
+        ("final-build", "final-review"),
+        ("final-build", "needs-human"),
+        ("ready", "final-build"),
+        ("needs-human", "final-build"),
+        ("ready", "done"),
+    }
+)
+
 MAX_CONTRACT_FAILURES = 2  # first failure goes back to the same agent; second escalates
 
 Effect = Callable[[], None]
@@ -67,8 +82,8 @@ class Transition:
     updates: dict[str, Any] = field(default_factory=dict)
 
 
-def check_legal(frm: str, to: str) -> None:
-    if (frm, to) not in LEGAL:
+def check_legal(frm: str, to: str, kind: str = "ticket") -> None:
+    if (frm, to) not in (SPEC_LEGAL if kind == "spec" else LEGAL):
         raise FactoryError(f"illegal transition {frm} -> {to}")
 
 
@@ -79,7 +94,7 @@ def say(job: Job, text: str) -> str:
 
 def apply(ctx: Ctx, job: Job, t: Transition) -> str:
     frm = job.stage
-    check_legal(frm, t.to)
+    check_legal(frm, t.to, job["kind"])
     for effect in t.effects:
         try:
             effect()
@@ -166,6 +181,10 @@ def advance(ctx: Ctx, job: Job) -> str:
     stage = job.stage
     if stage in TERMINAL:
         raise FactoryError(f"{job.id}: '{stage}' is terminal; no transition from it")
+    if job["kind"] == "spec":
+        from lib import spec
+
+        return spec.advance(ctx, job)
     handlers: dict[str, Callable[[Ctx, Job], Transition]] = {
         "intake": _from_intake,
         "needs-info": _from_needs_info,
@@ -472,7 +491,10 @@ def rework(ctx: Ctx, job: Job) -> str:
     def write() -> None:
         atomic_write(path, "\n".join(lines))
 
-    to = "build" if job.get("plan_accepted") else "intake"
+    if job["kind"] == "spec":
+        to = "final-build"
+    else:
+        to = "build" if job.get("plan_accepted") else "intake"
     t = Transition(
         to,
         f"rework {path.name} ({len(fresh)} comments)",
@@ -536,7 +558,10 @@ def merge(ctx: Ctx, job: Job) -> str:
         lambda: ctx.gh.close_issue(n),
         *t.effects,
     ]
-    return apply(ctx, job, t)
+    line = apply(ctx, job, t)
+    from lib import spec
+
+    return "\n".join([line, *spec.maybe_finish_building(ctx, job["spec"])])
 
 
 # ---------------------------------------------------------------- scheduling: next / start / recover
@@ -556,6 +581,10 @@ def blockers_pending(cfg: Config, job: Job) -> list[int]:
 
 def action_for(ctx: Ctx, job: Job) -> dict[str, Any] | None:
     cfg, stage = ctx.cfg, job.stage
+    if job["kind"] == "spec":
+        from lib import spec
+
+        return spec.action_for(ctx, job)
     base: dict[str, Any] = {
         "job": job.id,
         "issue": job["issue"],
@@ -611,7 +640,8 @@ def next_actions(ctx: Ctx, only: str | None = None) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     if only is not None:
         ref = only.lstrip("#")
-        jobs = [j for j in jobs if j.id == ref or str(j["issue"]) == ref]
+        picked = {j.id for j in jobs if j.id == ref or str(j["issue"]) == ref}
+        jobs = [j for j in jobs if j.id in picked or j.get("spec") in picked]
     for job in jobs:
         if len(actions) >= slots:
             break
@@ -659,7 +689,9 @@ def recover(ctx: Ctx) -> list[str]:
             job.log_event(job.stage, job.stage, f"recover: released claim {job['claim']['action']}")
             job["claim"] = None
             job.save()
-        needs_worktree = job.stage not in ("intake", "needs-info") or job.worktree.is_dir()
+        needs_worktree = (
+            job.stage not in ("intake", "needs-info", "building") or job.worktree.is_dir()
+        )
         if not needs_worktree:
             continue
         if not job.worktree.is_dir():
@@ -689,10 +721,10 @@ def create(ctx: Ctx, number: int) -> str:
             f"issue #{number} lacks the '{cfg.label('queue')}' label (trust boundary)"
         )
     if cfg.label("spec") in data["labels"]:
-        raise FactoryError(f"issue #{number} is a spec; use `job spec create {number}` (phase 5)")
+        raise FactoryError(f"issue #{number} is a spec; use `job spec create {number}`")
     if issue_md.parent_of(data["body"]):
         raise FactoryError(
-            f"issue #{number} is a child of a spec; it is created by `job spec create` (phase 5)"
+            f"issue #{number} is a child of a spec; it is created by `job spec create`"
         )
     job = jobs_mod.new_ticket(cfg, data)
     job.dir.mkdir(parents=True, exist_ok=False)
@@ -708,10 +740,23 @@ def queue(ctx: Ctx) -> list[str]:
         n = data["number"]
         if by_issue(cfg, n):
             continue
-        if cfg.label("spec") in data["labels"] or issue_md.parent_of(data["body"]):
-            out.append(f"#{n}: spec level not implemented yet (phase 5), skipped")
+        if cfg.label("spec") in data["labels"]:
+            from lib import spec
+
+            try:
+                out.append(spec.create(ctx, n))
+            except FactoryError as exc:
+                out.append(f"#{n}: spec not created: {exc}")
             continue
+        parent = issue_md.parent_of(data["body"])
+        if parent:
+            if not by_issue(cfg, parent):
+                out.append(f"#{n}: child of #{parent}, waiting for that spec to be created")
+            continue  # children are created by their spec (create or incorporate)
         out.append(create(ctx, n))
+    from lib import spec
+
+    out += spec.sync(ctx)
     for job in live_jobs(cfg):
         try:
             if job.stage == "needs-info":
