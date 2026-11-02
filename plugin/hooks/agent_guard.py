@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PreToolUse guard for the factory's subagents (planner, builder, reviewer).
 
-Wired from each agent's frontmatter:  agent_guard.py <planner|builder|reviewer>
+Wired from the plugin's hooks/hooks.json (role taken from the hook's `agent_type`),
+or from a project agent's frontmatter as `agent_guard.py <planner|builder|reviewer>`.
 Reads the hook JSON on stdin. Exit 0 = no objection (normal permissions apply);
 exit 2 = blocked, stderr is shown to the agent.
 
@@ -105,15 +106,35 @@ def check_write(agent: str, root: Path, file_path: str, tool: str) -> int:
     return 0
 
 
+ROLES = ("planner", "builder", "reviewer")
+
+
+def role_of(agent_type: object) -> str | None:
+    """`software-factory:builder` (plugin agent) or `builder` (project agent) -> `builder`."""
+    if not isinstance(agent_type, str) or not agent_type:
+        return None
+    name = agent_type.rsplit(":", 1)[-1]
+    if name not in ROLES:
+        return None
+    if ":" in agent_type and not agent_type.startswith("software-factory:"):
+        return None  # another plugin's agent that happens to share a name
+    return name
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[1] not in ("planner", "builder", "reviewer"):
-        print("usage: agent_guard.py <planner|builder|reviewer>", file=sys.stderr)
+    """Two wirings: `agent_guard.py <role>` from an agent's frontmatter (project agents), or
+    `agent_guard.py` from the plugin's hooks.json, where the role comes from `agent_type`
+    and any tool call that is not from a factory agent passes through untouched."""
+    if len(argv) > 2 or (len(argv) == 2 and argv[1] not in ROLES):
+        print("usage: agent_guard.py [planner|builder|reviewer]", file=sys.stderr)
         return 2
-    agent = argv[1]
     try:
         payload = json.load(sys.stdin)
     except ValueError:
         return block("hook received invalid JSON")
+    agent = argv[1] if len(argv) == 2 else role_of(payload.get("agent_type"))
+    if agent is None:
+        return 0
     tool = str(payload.get("tool_name", ""))
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):

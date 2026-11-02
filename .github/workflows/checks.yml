@@ -28,4 +28,4 @@ jobs:
         with:
           python-version: "3.10"
       - name: factory unit tests (no network, fake GitHub)
-        run: python -m unittest discover -s factory/tests -t factory/tests
+        run: python -m unittest discover -s plugin/tests -t plugin/tests

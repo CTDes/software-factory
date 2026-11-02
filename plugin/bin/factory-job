@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""factory/bin/job — see factory/DESIGN.md. Logic lives in factory/lib/."""
+"""factory-job — see DESIGN.md in the plugin. Logic lives in the plugin's lib/."""
 
 import sys
 from pathlib import Path

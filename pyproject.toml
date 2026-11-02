@@ -21,8 +21,8 @@ extend-exclude = ["factory/jobs", ".claude/worktrees"]
 select = ["E", "F", "W", "I", "B", "UP", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-# factory/ holds long Markdown/prompt templates in strings
-"factory/**" = ["E501"]
+# the plugin holds long Markdown/prompt templates in strings
+"plugin/**" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -1,10 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(factory/bin/job *)",
-      "Bash(./factory/bin/job *)",
-      "Bash(factory/bin/gate *)",
-      "Bash(./factory/bin/gate *)",
+      "Bash(factory-job *)",
+      "Bash(factory-gate *)",
       "Bash(factory/checks.sh)",
       "Bash(./factory/checks.sh)",
       "Bash(git add *)",
@@ -28,5 +26,13 @@
     "deny": [
       "Bash(git push *)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "ctdes-factory": {
+      "source": { "source": "github", "repo": "CTDes/software-factory" }
+    }
+  },
+  "enabledPlugins": {
+    "software-factory@ctdes-factory": true
   }
 }

@@ -15,12 +15,27 @@
   },
   "models": {
     "planner": "opus",
-    "builder":  { "low": "sonnet", "medium": "sonnet", "high": "opus" },
-    "reviewer": { "low": "haiku",  "medium": "sonnet", "high": "sonnet" },
+    "builder": {
+      "low": "sonnet",
+      "medium": "sonnet",
+      "high": "opus"
+    },
+    "reviewer": {
+      "low": "haiku",
+      "medium": "sonnet",
+      "high": "sonnet"
+    },
     "final_reviewer": "opus"
   },
   "always_human_surfaces": [],
-  "protected_paths": ["factory/**", ".github/**", ".claude/**", "tests/**"],
+  "protected_paths": [
+    "factory/**",
+    ".github/**",
+    ".claude/**",
+    "tests/**",
+    "plugin/**",
+    ".claude-plugin/**"
+  ],
   "checks_timeout_s": 900,
   "log_tail_lines": 80
 }

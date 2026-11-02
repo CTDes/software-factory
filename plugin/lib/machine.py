@@ -63,7 +63,17 @@ SPEC_LEGAL: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-MAX_CONTRACT_FAILURES = 2  # first failure goes back to the same agent; second escalates
+MAX_CONTRACT_FAILURES = 2
+
+# Plugin-scoped names: agents are `<plugin>:<agent>`, executables live in the plugin's bin/.
+PLUGIN = "software-factory"
+JOB_CMD = "factory-job"
+GATE_CMD = "factory-gate"
+
+
+def agent_name(agent: str) -> str:
+    return f"{PLUGIN}:{agent}"  # first failure goes back to the same agent; second escalates
+
 
 Effect = Callable[[], None]
 
@@ -361,7 +371,7 @@ def _from_build(ctx: Ctx, job: Job) -> Transition:
 def _from_gate(ctx: Ctx, job: Job) -> Transition:
     path = job.round_dir() / "checks.md"
     if not path.exists():
-        raise FactoryError(f"{job.id}: {path} not found; run `gate {job.id}` first")
+        raise FactoryError(f"{job.id}: {path} not found; run `factory-gate {job.id}` first")
     checks = contracts.read_checks(path)
     if checks["GATE"] == "PASS":
         return Transition("review", "GATE PASS")
@@ -610,17 +620,21 @@ def action_for(ctx: Ctx, job: Job) -> dict[str, Any] | None:
     if stage in AGENT_ACTIONS:
         action = AGENT_ACTIONS[stage]
         if action == "plan":
-            agent, model, name = "planner", cfg.model("planner"), f"planner-{job.id}"
+            agent, model, name = agent_name("planner"), cfg.model("planner"), f"planner-{job.id}"
             spec_md = None
             if job["spec"]:
                 spec_md = str(cfg.jobs_dir / job["spec"] / "issue.md")
             prompt = prompts.plan(job, spec_md)
         elif action == "build":
-            agent, model, name = "builder", job["models"]["builder"], f"builder-{job.id}"
+            agent, model, name = (
+                agent_name("builder"),
+                job["models"]["builder"],
+                f"builder-{job.id}",
+            )
             prompt = prompts.build(job)
         else:
             agent, model, name = (
-                "reviewer",
+                agent_name("reviewer"),
                 job["models"]["reviewer"],
                 f"reviewer-{job.id}-r{job['round']}",
             )
@@ -636,9 +650,7 @@ def action_for(ctx: Ctx, job: Job) -> dict[str, Any] | None:
         }
     if stage in SCRIPT_ACTIONS:
         action = SCRIPT_ACTIONS[stage]
-        cmd = (
-            f"factory/bin/gate {job.id}" if action == "gate" else f"factory/bin/job merge {job.id}"
-        )
+        cmd = f"{GATE_CMD} {job.id}" if action == "gate" else f"{JOB_CMD} merge {job.id}"
         return {**base, "action": action, "kind": "script", "command": cmd}
     return None
 

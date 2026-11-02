@@ -1,15 +1,9 @@
 ---
 name: builder
-description: Software-factory pipeline step. Implements a job's plan.md test-first inside the job's worktree, commits, and writes build.md (READY / BLOCKED). Launched only by the /factory orchestrator with a prompt from `factory/bin/job next`.
+description: Software-factory pipeline step. Implements a job's plan.md test-first inside the job's worktree, commits, and writes build.md (READY / BLOCKED). Launched only by the /software-factory:factory orchestrator with a prompt from `factory-job next`.
 model: sonnet
 skills:
-  - tdd
-hooks:
-  PreToolUse:
-    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
-      hooks:
-        - type: command
-          command: python3 "$CLAUDE_PROJECT_DIR/factory/hooks/agent_guard.py" builder
+  - software-factory:tdd
 ---
 
 Eres un paso de un pipeline. Tu contexto son ficheros, no una conversación: nadie va a

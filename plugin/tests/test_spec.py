@@ -200,7 +200,7 @@ class FinalTest(SpecTestCase):
         s = self.to_final_review()
         [a] = machine.next_actions(self.ctx)
         self.assertEqual(
-            (a["action"], a["command"]), ("final-gate", f"factory/bin/gate {s.id} --final")
+            (a["action"], a["command"]), ("final-gate", f"factory-gate {s.id} --final")
         )
         machine.start(self.ctx, s)
         res = self.run_cli("gate", s.id, "--final")
@@ -209,7 +209,8 @@ class FinalTest(SpecTestCase):
         self.assertIn("final review pending", out)
         [r] = machine.next_actions(self.ctx)
         self.assertEqual(
-            (r["action"], r["agent"], r["model"]), ("final-review", "reviewer", "opus")
+            (r["action"], r["agent"], r["model"]),
+            ("final-review", "software-factory:reviewer", "opus"),
         )
         self.assertIn("git diff origin/main...HEAD", r["prompt"])
         self.assertIn("issue de la spec es el criterio", r["prompt"])
@@ -238,7 +239,7 @@ class FinalTest(SpecTestCase):
         self.assertIn("final-review -> final-build", out)
         s = self.spec_job()
         [b] = machine.next_actions(self.ctx)
-        self.assertEqual((b["action"], b["agent"]), ("final-build", "builder"))
+        self.assertEqual((b["action"], b["agent"]), ("final-build", "software-factory:builder"))
         self.assertIn("round-1/checks.md", b["prompt"])
         self.commit(s.worktree, "notes.md", "fix\n", "final fix")
         self.write_build(s, evidence="C1: tests/test_sub.py::test_sub — still green")

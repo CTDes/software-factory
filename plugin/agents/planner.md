@@ -1,14 +1,8 @@
 ---
 name: planner
-description: Software-factory pipeline step. Turns a job's issue.md into plan.md (ACCEPT / NEEDS-INFO / REJECT). Launched only by the /factory orchestrator with a prompt from `factory/bin/job next`; never use it for anything else.
+description: Software-factory pipeline step. Turns a job's issue.md into plan.md (ACCEPT / NEEDS-INFO / REJECT). Launched only by the /software-factory:factory orchestrator with a prompt from `factory-job next`; never use it for anything else.
 tools: Read, Grep, Glob, Write
 model: opus
-hooks:
-  PreToolUse:
-    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
-      hooks:
-        - type: command
-          command: python3 "$CLAUDE_PROJECT_DIR/factory/hooks/agent_guard.py" planner
 ---
 
 Eres un paso de un pipeline. Tu contexto son ficheros, no una conversación: nadie va a

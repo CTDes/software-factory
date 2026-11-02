@@ -15,6 +15,7 @@ from lib import contracts, git, prompts
 from lib import issue as issue_md
 from lib.jobs import TERMINAL, Job, all_jobs, by_issue, job_id, new_ticket
 from lib.machine import (
+    GATE_CMD,
     Ctx,
     Effect,
     Transition,
@@ -24,6 +25,7 @@ from lib.machine import (
     _label,
     _rel,
     _remove_worktree,
+    agent_name,
     apply,
     say,
 )
@@ -287,14 +289,14 @@ def action_for(ctx: Ctx, spec: Job) -> dict[str, Any] | None:
                 **base,
                 "action": "final-gate",
                 "kind": "script",
-                "command": f"factory/bin/gate {spec.id} --final",
+                "command": f"{GATE_CMD} {spec.id} --final",
             }
         if not (rd / "review.md").exists():
             return {
                 **base,
                 "action": "final-review",
                 "kind": "agent",
-                "agent": "reviewer",
+                "agent": agent_name("reviewer"),
                 "model": spec["models"]["reviewer"],
                 "name": f"reviewer-{spec.id}-r{spec['round']}",
                 "prompt": prompts.review(spec, final=True),
@@ -305,7 +307,7 @@ def action_for(ctx: Ctx, spec: Job) -> dict[str, Any] | None:
             **base,
             "action": "final-build",
             "kind": "agent",
-            "agent": "builder",
+            "agent": agent_name("builder"),
             "model": spec["models"]["builder"],
             "name": f"builder-{spec.id}",
             "prompt": prompts.build(spec),
@@ -364,7 +366,7 @@ def _from_final_review(ctx: Ctx, spec: Job) -> str:
     checks_path = rd / "checks.md"
     if not checks_path.exists():
         raise FactoryError(
-            f"{spec.id}: {checks_path} not found; run `gate {spec.id} --final` first"
+            f"{spec.id}: {checks_path} not found; run `factory-gate {spec.id} --final` first"
         )
     checks = contracts.read_checks(checks_path)
     if checks["GATE"] == "FAIL":

@@ -1,0 +1,17 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Add the toolchain your checks.sh needs (setup-python, setup-node, ...).
+      - name: factory/checks.sh
+        run: factory/checks.sh

@@ -39,7 +39,7 @@ class NextTest(FactoryTestCase):
             {
                 "action": "plan",
                 "kind": "agent",
-                "agent": "planner",
+                "agent": "software-factory:planner",
                 "model": "opus",
                 "name": f"planner-{job.id}",
             },
@@ -51,13 +51,14 @@ class NextTest(FactoryTestCase):
         self.assertEqual(gate, [])  # 12 still in intake unclaimed takes the only slot
         self.cfg.data["concurrency"] = 3
         [g] = [a for a in machine.next_actions(self.ctx) if a["issue"] == 13]
-        self.assertEqual((g["kind"], g["command"]), ("script", f"factory/bin/gate {job.id}"))
+        self.assertEqual((g["kind"], g["command"]), ("script", f"factory-gate {job.id}"))
 
     def test_build_and_review_use_risk_models(self) -> None:
         job = self.to_build()
         [b] = machine.next_actions(self.ctx)
         self.assertEqual(
-            (b["agent"], b["model"], b["name"]), ("builder", "sonnet", f"builder-{job.id}")
+            (b["agent"], b["model"], b["name"]),
+            ("software-factory:builder", "sonnet", f"builder-{job.id}"),
         )
         self.build_feature(job)
         job = self.advance(job)
@@ -65,7 +66,8 @@ class NextTest(FactoryTestCase):
         job = self.advance(job)
         [r] = machine.next_actions(self.ctx)
         self.assertEqual(
-            (r["agent"], r["model"], r["name"]), ("reviewer", "sonnet", f"reviewer-{job.id}-r1")
+            (r["agent"], r["model"], r["name"]),
+            ("software-factory:reviewer", "sonnet", f"reviewer-{job.id}-r1"),
         )
         self.assertIn("round-1/review.md", r["prompt"])
         self.write_review(job, "CHANGES")

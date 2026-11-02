@@ -1,0 +1,12 @@
+{
+  "name": "ctdes-factory",
+  "description": "CTDes software factory",
+  "owner": { "name": "CTDes" },
+  "plugins": [
+    {
+      "name": "software-factory",
+      "source": "./plugin",
+      "description": "Issues and specs to merged code: planner, builder, reviewer, factory-job and factory-gate"
+    }
+  ]
+}

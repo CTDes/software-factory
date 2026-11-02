@@ -77,7 +77,7 @@ def _status(job: jobs.Job) -> str:
 
 
 def job_main(argv: Sequence[str] | None = None) -> int:
-    p = _Parser(prog="job", description="Software factory state machine")
+    p = _Parser(prog="factory-job", description="Software factory state machine")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("queue")
     c = sub.add_parser("create")
@@ -144,14 +144,15 @@ def job_main(argv: Sequence[str] | None = None) -> int:
         elif args.cmd == "summary":
             print(_summary(cfg))
     except FactoryError as exc:
-        print(f"job: {exc}", file=sys.stderr)
+        print(f"factory-job: {exc}", file=sys.stderr)
         return exc.code
     return EXIT_OK
 
 
 def gate_main(argv: Sequence[str] | None = None) -> int:
     p = _Parser(
-        prog="gate", description="Run checks.sh from origin/<base_branch> and verify the diff"
+        prog="factory-gate",
+        description="Run checks.sh from origin/<base_branch> and verify the diff",
     )
     p.add_argument("id")
     p.add_argument("--final", action="store_true", help="spec final gate: diff against base_branch")
@@ -166,7 +167,7 @@ def gate_main(argv: Sequence[str] | None = None) -> int:
             raise FactoryError(f"{job.id}: gate runs in stage 'gate', job is in '{job.stage}'")
         result = gate.run_gate(cfg, job, final=args.final)
     except FactoryError as exc:
-        print(f"gate: {exc}", file=sys.stderr)
+        print(f"factory-gate: {exc}", file=sys.stderr)
         return EXIT_USAGE  # 1 is reserved for a FAIL verdict
     verdict = "PASS" if result.passed else "FAIL"
     print(f"{job.id} GATE {verdict} → {job.round_dir() / 'checks.md'}")

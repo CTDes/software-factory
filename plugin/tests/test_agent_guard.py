@@ -118,6 +118,33 @@ class AgentGuardTest(unittest.TestCase):
         self.assertBlocked("builder", "Write", file_path=str(self.wt / "tests" / "test_old.py"))
         self.assertAllowed("builder", "Write", file_path=str(self.wt / "tests" / "test_new.py"))
 
+    def run_plugin_guard(self, agent_type: str | None, command: str) -> int:
+        """The plugin's hooks.json calls the guard without a role: it reads agent_type."""
+        payload: dict[str, object] = {"tool_name": "Bash", "tool_input": {"command": command}}
+        if agent_type is not None:
+            payload["agent_type"] = agent_type
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.root))
+        return subprocess.run(
+            [sys.executable, str(GUARD)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=env,
+        ).returncode
+
+    def test_plugin_wiring_reads_role_from_agent_type(self) -> None:
+        self.assertEqual(self.run_plugin_guard("software-factory:builder", "gh pr list"), 2)
+        self.assertEqual(self.run_plugin_guard("software-factory:reviewer", "python3 -c 1"), 2)
+        self.assertEqual(
+            self.run_plugin_guard("software-factory:builder", "python3 -m unittest"), 0
+        )
+        self.assertEqual(self.run_plugin_guard("builder", "git " + "push"), 2)  # project agent
+
+    def test_plugin_wiring_ignores_everyone_else(self) -> None:
+        self.assertEqual(self.run_plugin_guard(None, "gh pr list"), 0)  # main session
+        self.assertEqual(self.run_plugin_guard("Explore", "gh pr list"), 0)
+        self.assertEqual(self.run_plugin_guard("other-plugin:builder", "gh pr list"), 0)
+
     def test_other_tools_pass_through(self) -> None:
         self.assertAllowed("planner", "Read", file_path="/etc/hosts")
         self.assertAllowed("reviewer", "Grep", pattern="x")

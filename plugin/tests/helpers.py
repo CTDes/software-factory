@@ -290,7 +290,7 @@ class FactoryTestCase(unittest.TestCase):
 
     def run_cli(self, tool: str, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(FACTORY / "bin" / tool), *args],
+            [sys.executable, str(FACTORY / "bin" / f"factory-{tool}"), *args],
             cwd=self.root,
             capture_output=True,
             text=True,

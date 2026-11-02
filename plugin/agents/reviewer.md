@@ -1,14 +1,8 @@
 ---
 name: reviewer
-description: Software-factory pipeline step. Reviews a job's diff against its plan on separate axes (Estándares, Spec, Arquitectura, Seguridad) and writes round-N/review.md (PASS / CHANGES). Launched only by the /factory orchestrator with a prompt from `factory/bin/job next`.
+description: Software-factory pipeline step. Reviews a job's diff against its plan on separate axes (Estándares, Spec, Arquitectura, Seguridad) and writes round-N/review.md (PASS / CHANGES). Launched only by the /software-factory:factory orchestrator with a prompt from `factory-job next`.
 tools: Read, Grep, Glob, Write, Bash
 model: sonnet
-hooks:
-  PreToolUse:
-    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
-      hooks:
-        - type: command
-          command: python3 "$CLAUDE_PROJECT_DIR/factory/hooks/agent_guard.py" reviewer
 ---
 
 Eres un paso de un pipeline. Tu contexto son ficheros, no una conversación: nadie va a
