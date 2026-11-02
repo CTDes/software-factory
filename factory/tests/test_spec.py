@@ -288,3 +288,71 @@ class FinalTest(SpecTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergeRaceTest(SpecTestCase):
+    """Two tickets of the same spec reaching `merging` at once."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.add_spec()
+        self.add_child(A)
+        self.add_child(E)
+        spec.create(self.ctx, SPEC)
+        self.cfg.data["concurrency"] = 2
+        for n, rel in ((A, "a.py"), (E, "e.py")):
+            job = self.start(self.job(n))
+            self.write_plan(job)
+            job = self.advance(job)
+            self.commit(job.worktree, rel, "x = 1\n", f"C1: {rel}")
+            self.commit(
+                job.worktree,
+                f"tests/test_{rel}",
+                "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_sub(self):\n        pass\n",
+                "C1: test",
+            )
+            self.write_build(job, evidence=f"C1: tests/test_{rel}::test_sub — ok")
+            job = self.advance(job)
+            self.write_checks(job)
+            job = self.advance(job)
+            self.write_review(job)
+            self.assertEqual(self.advance(job).stage, "merging")
+
+    def test_only_one_merge_per_base_is_offered_and_started(self) -> None:
+        offered = [a for a in machine.next_actions(self.ctx) if a["action"] == "merge"]
+        self.assertEqual([a["issue"] for a in offered], [A])
+        machine.start(self.ctx, self.job(A))
+        self.assertEqual(machine.next_actions(self.ctx), [])
+        with self.assertRaisesRegex(FactoryError, "another merge into spec/"):
+            machine.start(self.ctx, self.job(E))
+
+    def test_rejected_push_releases_claim_and_retry_succeeds(self) -> None:
+        e = self.job(E)
+        stale = self.git(self.root, "rev-parse", f"origin/{e['base']}").strip()
+        machine.start(self.ctx, self.job(A))
+        machine.merge(self.ctx, self.job(A))
+        # E prepared its merge against the old spec head: simulate the race by merging
+        # E's worktree against the stale ref, then pushing after A already landed.
+        e = self.job(E)
+        e["claim"] = {"action": "merge", "at": "now"}
+        e.save()
+        import lib.git as libgit
+
+        real_fetch = libgit.fetch
+        libgit.fetch = lambda root, *refs: None  # E does not see A's push: stale base
+        try:
+            self.git(e.worktree, "update-ref", f"refs/remotes/origin/{e['base']}", stale)
+            self.git(self.root, "update-ref", f"refs/remotes/origin/{e['base']}", stale)
+            with self.assertRaisesRegex(FactoryError, "claim released"):
+                machine.merge(self.ctx, self.job(E))
+        finally:
+            libgit.fetch = real_fetch
+        e = self.job(E)
+        self.assertEqual((e.stage, e["claim"]), ("merging", None))
+        self.assertIn("will retry", e.file("events.log").read_text())
+        [a] = machine.next_actions(self.ctx)
+        self.assertEqual((a["issue"], a["action"]), (E, "merge"))
+        machine.start(self.ctx, self.job(E))
+        out = machine.merge(self.ctx, self.job(E))
+        self.assertIn("merging -> done", out)
+        self.assertIn("building -> final-review", out)

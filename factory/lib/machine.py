@@ -18,7 +18,7 @@ from lib import issue as issue_md
 from lib.config import Config
 from lib.github import GitHub
 from lib.jobs import TERMINAL, Job, all_jobs, by_issue
-from lib.util import FactoryError, atomic_write, is_after, now
+from lib.util import CommandError, FactoryError, atomic_write, is_after, now
 
 # (from, to). Anything else is rejected. Additions to the DESIGN table are marked (+).
 LEGAL: frozenset[tuple[str, str]] = frozenset(
@@ -551,9 +551,25 @@ def merge(ctx: Ctx, job: Job) -> str:
             f"Detalle en `{_rel(job, out)}`.\n\n```text\n{g.log_tail}\n```\n",
         )
     n = job["issue"]
+
+    def push_or_release() -> None:
+        try:
+            git.push_fast_forward(wt, base)
+        except CommandError as exc:
+            # Someone moved the base meanwhile: not an error of this job. Stay in 'merging',
+            # free the claim, and let the next `job next` retry (merge again, gate again).
+            job["claim"] = None
+            job.log_event("merging", "merging", f"push to {base} rejected (base moved); will retry")
+            job.save()
+            raise FactoryError(
+                f"{job.id}: push to {base} rejected because {base} moved meanwhile; "
+                "claim released, the merge will be retried by the next `job next`.\n"
+                f"{exc}"
+            ) from exc
+
     t = _done(ctx, job, f"merged into {base}")
     t.effects = [
-        lambda: git.push_fast_forward(wt, base),
+        push_or_release,
         _comment(ctx, n, say(job, f"integrado en `{base}` tras {job['round']} rondas.")),
         lambda: ctx.gh.close_issue(n),
         *t.effects,
@@ -642,14 +658,22 @@ def next_actions(ctx: Ctx, only: str | None = None) -> list[dict[str, Any]]:
         ref = only.lstrip("#")
         picked = {j.id for j in jobs if j.id == ref or str(j["issue"]) == ref}
         jobs = [j for j in jobs if j.id in picked or j.get("spec") in picked]
+    # Merges into the same base branch must run one at a time: two fast-forward pushes
+    # of the same spec branch race and the second is rejected.
+    merging_bases = {j["base"] for j in claimed if (j.get("claim") or {}).get("action") == "merge"}
     for job in jobs:
         if len(actions) >= slots:
             break
         if job.get("claim") or blockers_pending(ctx.cfg, job):
             continue
         action = action_for(ctx, job)
-        if action:
-            actions.append(action)
+        if not action:
+            continue
+        if action["action"] == "merge":
+            if job["base"] in merging_bases:
+                continue
+            merging_bases.add(job["base"])
+        actions.append(action)
     return actions
 
 
@@ -666,6 +690,14 @@ def start(ctx: Ctx, job: Job) -> str:
     if pending:
         raise FactoryError(f"{job.id}: blocked by {', '.join(f'#{n}' for n in pending)}")
     claimed = [j for j in live_jobs(cfg) if j.get("claim")]
+    if action["action"] == "merge":
+        busy = [
+            j.id
+            for j in claimed
+            if (j.get("claim") or {}).get("action") == "merge" and j["base"] == job["base"]
+        ]
+        if busy:
+            raise FactoryError(f"{job.id}: another merge into {job['base']} is running: {busy[0]}")
     if len(claimed) >= cfg["concurrency"]:
         raise FactoryError(
             f"concurrency {cfg['concurrency']} reached: {', '.join(j.id for j in claimed)}"
