@@ -63,10 +63,3 @@ def reading_time(text: str, wpm: int = 200) -> int:
 def normalize(text: str) -> str:
     """Return ``text`` in Unicode NFKC form, with no other transformation."""
     return unicodedata.normalize("NFKC", text)
-
-
-def debug_normalize(text: str) -> str:
-    """Normalize and print the before/after pair (handy while debugging)."""
-    result = normalize(text)
-    print(f"normalize({text!r}) -> {result!r}")
-    return result
