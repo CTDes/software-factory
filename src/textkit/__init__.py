@@ -9,6 +9,7 @@ from textkit.text import (
     sentence_count,
     slugify,
     truncate,
+    unique_words,
     word_count,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "sentence_count",
     "slugify",
     "truncate",
+    "unique_words",
     "word_count",
 ]
