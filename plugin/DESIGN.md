@@ -79,7 +79,7 @@ plugin software-factory/                (installed under ~/.claude/plugins/cache
     checks.sh                            PROJECT-SPECIFIC · lint, typecheck, tests, build
     config.json                          PROJECT-SPECIFIC · see config.json
     jobs/<job-id>/                       state of each job (gitignored)
-    jobs/_events/                        outbox for the optional event emitter (see Events)
+    jobs/_events/                        office link and event outbox (see Events)
 
 ~/.claude/settings.json                  global git guardrails hook (outside the repo)
 ```
@@ -308,7 +308,8 @@ condition not met or illegal transition, 2 usage or configuration error.
 | `recover` | Releases claims left by a dead session and checks that every worktree exists and is on the branch in `job.json`. The orchestrator runs it first |
 | `status [<id>]` | Readable state of one or all jobs |
 | `summary` | Table: job, kind, stage, round, risk, PR, reason |
-| `events status\|flush\|backfill` | The optional event emitter (see Events): show the collector, repo, machine and pending count; send the outbox now; queue every job's `events.log` and send it |
+| `office link <token> [--url URL]` | Link this repository to a factory-office (see Events): check the office accepts the token, save the link, send the history |
+| `office status\|unlink\|flush\|backfill` | Show where events go and whether the office answers; forget the link; send the outbox now; send every job's `events.log` again |
 
 `job next` is what keeps the orchestrator dumb. It builds each agent's prompt from a template in
 `lib/prompts.py`, with absolute paths to the job folder and worktree, the base and the round. The
@@ -319,14 +320,27 @@ comments with the human's account, so this prefix is how it tells its own commen
 
 ### Events
 
-An optional emitter sends every transition to a collector, so a separate service (factory-office)
-can show what happens in every repository and machine. The factory never depends on it: with the
-variable unset nothing changes, and a collector that is down never blocks or fails a command.
+An optional emitter sends every transition to a factory-office, a separate service that shows
+every linked repository on every machine. The factory never depends on it: an unlinked
+repository behaves as before, and an office that is down never blocks or fails a command.
+
+Linking is per repository and needs only the office's single token:
+
+```sh
+factory-job office link <office-token>                         # office on this machine
+factory-job office link <office-token> --url http://nas:8765   # office elsewhere
+```
+
+`link` posts an empty batch to check that the office answers and accepts the token, saves
+`factory/jobs/_events/link.json` (mode 600, gitignored with `factory/jobs/`, so the token never
+reaches git) and sends the repository's history. `unlink` deletes it and drops pending events.
+
+For CI or a whole machine, environment variables take precedence over the link:
 
 | Variable | Meaning |
 | --- | --- |
-| `FACTORY_EVENTS_URL` | The collector's events endpoint. Unset: events are off |
-| `FACTORY_EVENTS_TOKEN` | Sent as `Authorization: Bearer <token>`. One per machine |
+| `FACTORY_EVENTS_URL` | The office's events endpoint |
+| `FACTORY_EVENTS_TOKEN` | The office token, sent as `Authorization: Bearer <token>` |
 | `FACTORY_EVENTS_MACHINE` | Machine name in the events. Default: the hostname |
 
 - `Job.log_event` is the single point every transition goes through. Besides the `events.log`
@@ -334,11 +348,11 @@ variable unset nothing changes, and a collector that is down never blocks or fai
 - At the end of every `factory-job` command the outbox is flushed: `POST` of
   `{"events": [...]}` in batches of 200, oldest first, 3 s timeout. Accepted events leave the
   outbox; the rest wait for the next command. After a failure, automatic flushes pause for 60 s,
-  so a collector that is down costs at most one timeout per minute. `events flush` always tries.
+  so an office that is down costs at most one timeout per minute. `office flush` always tries.
 - One process flushes at a time (`flush.lock`); appends and rewrites take `outbox.lock`.
-- `events backfill` queues every line of every job's `events.log`. Ids are deterministic, so the
-  collector drops copies of events it already has.
-- The collector must answer 2xx only once the batch is stored, and treat `id` as idempotent.
+- `office backfill` queues every line of every job's `events.log`. Ids are deterministic, so the
+  office drops copies of events it already has.
+- The office must answer 2xx only once the batch is stored, and treat `id` as idempotent.
 
 Event, schema 1:
 
@@ -644,6 +658,9 @@ before it was applied.
   GitHub labels alone cannot tell build, gate and review apart. Built by hand, not by the
   factory: `plugin/**` is a protected path in this repository.
 - 0.3.1, `job start` writes a `start <action>` note to `events.log` (and emits it).
+- 0.4.0, `factory-job office link <token>` replaces per-machine environment variables as the way
+  to connect: the office has a single token and each repository opts in. The variables remain
+  for CI. `events status|flush|backfill` became `office status|flush|backfill`.
 
 ## References
 

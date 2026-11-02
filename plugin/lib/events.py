@@ -1,11 +1,16 @@
 """Optional event emitter (DESIGN.md · Events).
 
-Every transition that ``Job.log_event`` writes to ``events.log`` can also be sent to a collector
-such as factory-office. Nothing here is required: with ``FACTORY_EVENTS_URL`` unset the factory
-behaves exactly as before, and with it set a collector that is down never blocks or fails a
-command. Events wait in a local outbox until a flush delivers them.
+Every transition that ``Job.log_event`` writes to ``events.log`` can also be sent to an office
+(factory-office). Nothing here is required: an unlinked repository behaves exactly as before, and
+an office that is down never blocks or fails a command. Events wait in a local outbox until a
+flush delivers them.
 
-Files, all under ``factory/jobs/_events/``:
+Where events go, first match wins:
+  FACTORY_EVENTS_URL (+ FACTORY_EVENTS_TOKEN)   for CI or a whole machine
+  factory/jobs/_events/link.json                written by `factory-job office link <token>`
+
+Files, all under ``factory/jobs/_events/`` (gitignored with factory/jobs/):
+  link.json      the office URL and token for this repository (mode 600)
   outbox.jsonl   one event per line, oldest first
   outbox.lock    held while the outbox is appended to or rewritten
   flush.lock     held by the one process that is flushing
@@ -45,18 +50,44 @@ BACKOFF_S = 60.0
 # ---------------------------------------------------------------- settings
 
 
+DEFAULT_OFFICE = "http://127.0.0.1:8765"
+
+
 @dataclass(frozen=True)
 class Sink:
-    url: str
+    url: str  # the office's events endpoint
     token: str | None
+    source: str = "env"  # "env" or "link"
 
 
-def sink() -> Sink | None:
-    """The configured collector, or None when events are off."""
+def events_url(url: str) -> str:
+    """The events endpoint for an office URL given with or without ``/events``."""
+    base = url.strip().rstrip("/")
+    if not re.match(r"^https?://[^/\s]+", base):
+        raise FactoryError(f"office URL must start with http:// or https://: {url!r}")
+    return base if base.endswith("/events") else base + "/events"
+
+
+def office_base(url: str) -> str:
+    return url[: -len("/events")] if url.endswith("/events") else url
+
+
+def link_path(cfg: Config) -> Path:
+    return _dir(cfg) / "link.json"
+
+
+def sink(cfg: Config | None = None) -> Sink | None:
+    """Where this repository sends events, or None when it is not linked."""
     url = os.environ.get(URL_ENV, "").strip()
-    if not url:
+    if url:
+        return Sink(url=url, token=os.environ.get(TOKEN_ENV, "").strip() or None, source="env")
+    if cfg is None:
         return None
-    return Sink(url=url, token=os.environ.get(TOKEN_ENV, "").strip() or None)
+    try:
+        data = json.loads(link_path(cfg).read_text(encoding="utf-8"))
+        return Sink(url=str(data["url"]), token=str(data["token"]) or None, source="link")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def machine_name() -> str:
@@ -164,7 +195,7 @@ def pending(cfg: Config) -> int:
 
 def record(cfg: Config, job: dict[str, Any], ts: str, frm: str, to: str, reason: str) -> None:
     """Queue the event for a transition. Never raises: events must not break the factory."""
-    if sink() is None:
+    if sink(cfg) is None:
         return
     try:
         append(cfg, [make_event(repo_name(cfg.root), machine_name(), ts, frm, to, reason, job)])
@@ -213,9 +244,9 @@ def flush(cfg: Config, automatic: bool = False) -> FlushResult:
     collector that is down costs at most one timeout per minute. Never raises.
     """
     result = FlushResult()
-    target = sink()
+    target = sink(cfg)
     if target is None:
-        result.skipped = f"{URL_ENV} is not set"
+        result.skipped = "not linked to an office"
         result.pending = pending(cfg)
         return result
     if not outbox_path(cfg).exists():
@@ -305,8 +336,8 @@ def backfill(cfg: Config, jobs: Sequence[dict[str, Any]]) -> int:
     Ids match the live events, so the collector drops the copies it already has. Only the last
     event of each job carries the job.json snapshot: the older ones never had it.
     """
-    if sink() is None:
-        raise FactoryError(f"backfill needs {URL_ENV}: set it to the collector's events URL")
+    if sink(cfg) is None:
+        raise FactoryError("not linked to an office: run `factory-job office link <token>` first")
     repo, machine = repo_name(cfg.root), machine_name()
     queued: list[dict[str, Any]] = []
     for job in jobs:
@@ -320,3 +351,74 @@ def backfill(cfg: Config, jobs: Sequence[dict[str, Any]]) -> int:
             )
     append(cfg, queued)
     return len(queued)
+
+
+# ---------------------------------------------------------------- linking
+
+
+def check(target: Sink) -> None:
+    """Raise FactoryError unless the office answers and accepts the token (an empty batch)."""
+    try:
+        _post(target, [])
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        if exc.code == 401:
+            raise FactoryError(
+                f"the office at {office_base(target.url)} rejected the token; show the current one"
+                " with `factory-office token` (it may have been rotated)"
+            ) from exc
+        raise FactoryError(f"the office at {target.url} answered HTTP {exc.code}") from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise FactoryError(
+            f"cannot reach an office at {office_base(target.url)}: {exc}. Is it running"
+            " (`docker compose up -d` in factory-office)?"
+        ) from exc
+
+
+def link(cfg: Config, token: str, url: str | None, jobs: Sequence[dict[str, Any]]) -> list[str]:
+    """Check the office, save the link for this repository and send its history."""
+    token = token.strip()
+    if not token:
+        raise FactoryError("office link needs the office token")
+    target = Sink(url=events_url(url or DEFAULT_OFFICE), token=token, source="link")
+    check(target)
+    payload = {"url": target.url, "token": token, "linked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    path = link_path(cfg)
+    atomic_write(path, json.dumps(payload, indent=2) + "\n")
+    path.chmod(0o600)
+    out = [f"linked {repo_name(cfg.root)} to {office_base(target.url)}"]
+    if os.environ.get(URL_ENV, "").strip():
+        out.append(f"note: {URL_ENV} is set in this environment and takes precedence over the link")
+    out.append(f"history: queued {backfill(cfg, jobs)} events")
+    return out
+
+
+def unlink(cfg: Config) -> str:
+    """Forget this repository's link. Pending events are dropped unless the environment sends."""
+    path = link_path(cfg)
+    if not path.exists():
+        return "not linked"
+    path.unlink()
+    if sink(cfg) is None:
+        dropped = pending(cfg)
+        for name in ("outbox.jsonl", "backoff"):
+            (_dir(cfg) / name).unlink(missing_ok=True)
+        return f"unlinked; dropped {dropped} pending events"
+    return f"unlinked; {URL_ENV} still sends this repository's events"
+
+
+def status(cfg: Config) -> list[str]:
+    target = sink(cfg)
+    lines = [f"repo       {repo_name(cfg.root)}", f"machine    {machine_name()}"]
+    if target is None:
+        lines.append("office     not linked (factory-job office link <token> [--url URL])")
+    else:
+        where = "environment" if target.source == "env" else "link.json"
+        lines.append(f"office     {office_base(target.url)}  (from {where})")
+        try:
+            check(target)
+            lines.append("reachable  yes, token accepted")
+        except FactoryError as exc:
+            lines.append(f"reachable  no: {exc}")
+    lines.append(f"pending    {pending(cfg)}")
+    return lines

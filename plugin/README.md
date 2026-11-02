@@ -42,20 +42,21 @@ to labels):
 - Human skills: `/software-factory:to-spec`, `/software-factory:to-tickets`,
   `/software-factory:grilling`, `/software-factory:domain-modeling`, `/software-factory:retro`.
 
-## Events (optional)
+## Office (optional)
 
-The factory can send every transition to a collector such as factory-office, so one place shows
-every repository on every machine. Set it once per machine, not per repository, in
-`~/.claude/settings.json`:
+[factory-office](https://github.com/CTDes/factory-office) shows every linked repository, on every
+machine, as a pixel-art office. Run it (`docker compose up -d` in its repository), show its token
+with `docker compose exec office factory-office token`, and in each repository you want to see:
 
-```json
-{ "env": { "FACTORY_EVENTS_URL": "http://127.0.0.1:8765/events", "FACTORY_EVENTS_TOKEN": "<token>" } }
+```sh
+factory-job office link <office-token>                         # office on this machine
+factory-job office link <office-token> --url http://nas:8765   # office elsewhere
 ```
 
-Events wait in `factory/jobs/_events/outbox.jsonl` until the collector accepts them; a collector
-that is down never blocks the factory. `factory-job events status` shows what is configured and
-pending, and `factory-job events backfill` sends the history of the jobs a repository already has.
-Details and the event format: DESIGN.md · Events.
+The link lives in `factory/jobs/_events/link.json` (gitignored). Events wait in an outbox until
+the office accepts them; an office that is down never blocks the factory. `factory-job office
+status` shows where events go and whether the office answers; `office unlink` stops sending. For
+CI, set `FACTORY_EVENTS_URL` and `FACTORY_EVENTS_TOKEN` instead. Details: DESIGN.md · Events.
 
 ## Update
 

@@ -7,7 +7,7 @@ import json
 import os
 import threading
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, ClassVar
 
@@ -16,16 +16,24 @@ from lib import cli, events, jobs, machine
 
 
 class Sink:
-    """A collector on 127.0.0.1 that records every POST and answers with ``status``."""
+    """An office on 127.0.0.1 that records every POST and answers with ``status``.
 
-    def __init__(self) -> None:
+    With ``token`` set it answers 401 to any other bearer token, like factory-office.
+    """
+
+    def __init__(self, token: str | None = None) -> None:
         self.requests: list[dict[str, Any]] = []
         self.status = 200
+        self.token = token
         sink = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 body = self.rfile.read(int(self.headers["Content-Length"]))
+                if sink.token and self.headers.get("Authorization") != f"Bearer {sink.token}":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
                 sink.requests.append(
                     {"auth": self.headers.get("Authorization"), "body": json.loads(body)}
                 )
@@ -138,11 +146,11 @@ class Disabled(EmitterTestCase):
         self.assertFalse(events.outbox_path(self.cfg).exists())
         result = events.flush(self.cfg)
         self.assertEqual(result.sent, 0)
-        self.assertIn(events.URL_ENV, result.skipped or "")
+        self.assertIn("not linked", result.skipped or "")
         self.assertEqual(self.sink.requests, [])
 
     def test_backfill_without_url_fails_clearly(self) -> None:
-        with self.assertRaisesRegex(Exception, events.URL_ENV):
+        with self.assertRaisesRegex(Exception, "office link"):
             events.backfill(self.cfg, [])
 
 
@@ -264,17 +272,17 @@ class Delivery(EmitterTestCase):
         self.assertEqual(len(self.sink.events()), 1)
         self.assertEqual(self.outbox(), [])
 
-    def test_events_cli_status_and_flush(self) -> None:
+    def test_office_cli_status_and_flush(self) -> None:
         self.new_job(12)
         out = io.StringIO()
         with redirect_stdout(out):
-            self.assertEqual(cli.job_main(["events", "status"]), 0)
+            self.assertEqual(cli.job_main(["office", "status"]), 0)
         self.assertIn("pending    1", out.getvalue())
-        self.assertIn("token      set", out.getvalue())
+        self.assertIn("(from environment)", out.getvalue())
         self.assertNotIn("s3cret", out.getvalue())
         out = io.StringIO()
         with redirect_stdout(out):
-            self.assertEqual(cli.job_main(["events", "flush"]), 0)
+            self.assertEqual(cli.job_main(["office", "flush"]), 0)
         self.assertIn("sent 1", out.getvalue())
 
 
@@ -291,6 +299,90 @@ class Backfill(EmitterTestCase):
         self.assertEqual([e["id"] for e in copies], [e["id"] for e in live])
         self.assertEqual([e["job"] is not None for e in copies], [False, False, True])
         self.assertEqual(copies[-1]["job"]["stage"], "build")
+
+
+class Linking(EmitterTestCase):
+    with_sink = False
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.office = Sink(token="office-secret")
+        self.addCleanup(self.office.close)
+        self.base = self.office.url[: -len("/events")]
+
+    def office_cli(self, *argv: str) -> tuple[int, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = cli.job_main(["office", *argv])
+        return code, out.getvalue() + err.getvalue()
+
+    def test_link_checks_saves_privately_and_sends_history(self) -> None:
+        self.new_job(12)
+        code, out = self.office_cli("link", "office-secret", "--url", self.base + "/")
+        self.assertEqual(code, 0, out)
+        self.assertIn("linked", out)
+        self.assertIn("queued 1", out)
+        path = events.link_path(self.cfg)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(json.loads(path.read_text())["url"], self.office.url)
+        self.assertEqual([e["issue"] for e in self.office.events()], [12])
+        self.assertEqual(self.office.requests[0]["body"], {"events": []})  # the link check
+
+    def test_linked_repo_sends_new_transitions_on_every_command(self) -> None:
+        self.office_cli("link", "office-secret", "--url", self.base)
+        self.new_job(13)
+        with redirect_stdout(io.StringIO()):
+            cli.job_main(["summary"])
+        self.assertEqual([e["issue"] for e in self.office.events()], [13])
+        self.assertEqual(self.office.requests[-1]["auth"], "Bearer office-secret")
+
+    def test_wrong_token_or_no_office_does_not_link(self) -> None:
+        code, out = self.office_cli("link", "wrong", "--url", self.base)
+        self.assertEqual(code, 1)
+        self.assertIn("rejected the token", out)
+        code, out = self.office_cli("link", "office-secret", "--url", "http://127.0.0.1:9")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot reach", out)
+        self.assertFalse(events.link_path(self.cfg).exists())
+        self.assertIsNone(events.sink(self.cfg))
+
+    def test_status_never_prints_the_token(self) -> None:
+        self.office_cli("link", "office-secret", "--url", self.base)
+        code, out = self.office_cli("status")
+        self.assertEqual(code, 0)
+        self.assertIn("(from link.json)", out)
+        self.assertIn("token accepted", out)
+        self.assertNotIn("office-secret", out)
+        self.office.token = "rotated"
+        self.assertIn("rejected the token", self.office_cli("status")[1])
+
+    def test_environment_takes_precedence(self) -> None:
+        self.office_cli("link", "office-secret", "--url", self.base)
+        os.environ[events.URL_ENV] = "http://127.0.0.1:9/events"
+        target = events.sink(self.cfg)
+        assert target is not None
+        self.assertEqual(target.source, "env")
+
+    def test_unlink_forgets_link_and_pending_events(self) -> None:
+        self.office_cli("link", "office-secret", "--url", self.base)
+        self.office.status = 500
+        self.new_job(14)
+        self.assertEqual(events.pending(self.cfg), 1)
+        code, out = self.office_cli("unlink")
+        self.assertEqual(code, 0)
+        self.assertIn("dropped 1", out)
+        self.assertFalse(events.link_path(self.cfg).exists())
+        self.assertEqual(events.pending(self.cfg), 0)
+        self.assertEqual(self.office_cli("unlink")[1].strip(), "not linked")
+
+    def test_link_needs_a_token(self) -> None:
+        self.assertEqual(self.office_cli("link")[0], 2)
+
+    def test_events_url(self) -> None:
+        self.assertEqual(events.events_url("http://h:8765"), "http://h:8765/events")
+        self.assertEqual(events.events_url("http://h:8765/events/"), "http://h:8765/events")
+        with self.assertRaisesRegex(Exception, "http"):
+            events.events_url("h:8765")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from lib import config, events, gate, jobs, machine
 from lib.github import connect
-from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, FactoryError
+from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, FactoryError, UsageError
 
 
 class _Parser(argparse.ArgumentParser):
@@ -95,12 +95,14 @@ def job_main(argv: Sequence[str] | None = None) -> int:
     st = sub.add_parser("status")
     st.add_argument("id", nargs="?")
     sub.add_parser("summary")
-    ev = sub.add_parser("events", help="send transitions to a collector (FACTORY_EVENTS_URL)")
-    ev.add_argument("subcmd", choices=["status", "flush", "backfill"])
+    of = sub.add_parser("office", help="link this repository to a factory-office")
+    of.add_argument("subcmd", choices=["link", "unlink", "status", "flush", "backfill"])
+    of.add_argument("token", nargs="?", help="the office token (link only)")
+    of.add_argument("--url", help=f"the office (default {events.DEFAULT_OFFICE})")
     args = p.parse_args(argv)
 
-    if args.cmd == "events":
-        return _events_main(args.subcmd)
+    if args.cmd == "office":
+        return _office_main(args.subcmd, args.token, args.url)
     try:
         ctx = _ctx()
         cfg = ctx.cfg
@@ -156,11 +158,11 @@ def job_main(argv: Sequence[str] | None = None) -> int:
 
 
 def _auto_flush() -> None:
-    """Best effort, silent: a collector that is down must not change any command's outcome."""
-    if events.sink() is None:
-        return
+    """Best effort, silent: an office that is down must not change any command's outcome."""
     try:
-        events.flush(config.load(), automatic=True)
+        cfg = config.load()
+        if events.sink(cfg) is not None:
+            events.flush(cfg, automatic=True)
     except Exception:
         pass
 
@@ -176,22 +178,27 @@ def _flush_line(r: events.FlushResult) -> str:
     return "events: " + ", ".join(parts)
 
 
-def _events_main(subcmd: str) -> int:
+def _office_main(subcmd: str, token: str | None, url: str | None) -> int:
     try:
         cfg = config.load()
-        target = events.sink()
         if subcmd == "status":
-            print(f"collector  {target.url if target else f'off ({events.URL_ENV} is not set)'}")
-            print(f"token      {'set' if target and target.token else 'not set'}")
-            print(f"repo       {events.repo_name(cfg.root)}")
-            print(f"machine    {events.machine_name()}")
-            print(f"pending    {events.pending(cfg)}")
+            print("\n".join(events.status(cfg)))
             return EXIT_OK
-        if subcmd == "backfill":
-            print(f"events: queued {events.backfill(cfg, [j.data for j in jobs.all_jobs(cfg)])}")
+        if subcmd == "unlink":
+            print(events.unlink(cfg))
+            return EXIT_OK
+        if subcmd == "link":
+            if not token:
+                raise UsageError("usage: factory-job office link <token> [--url URL]")
+            for line in events.link(cfg, token, url, [j.data for j in jobs.all_jobs(cfg)]):
+                print(line)
+        elif subcmd == "backfill":
+            print(
+                f"history: queued {events.backfill(cfg, [j.data for j in jobs.all_jobs(cfg)])} events"
+            )
         result = events.flush(cfg)
         print(_flush_line(result))
-        return EXIT_CONDITION if result.error or (target is None) else EXIT_OK
+        return EXIT_CONDITION if result.error or result.skipped else EXIT_OK
     except FactoryError as exc:
         print(f"factory-job: {exc}", file=sys.stderr)
         return exc.code
