@@ -8,3 +8,4 @@
 | suffix | String appended by `truncate` to signal cut text; default `…` (one character) |
 | initials | First letter of each word, uppercased, accents kept |
 | reading time | Minutes to read a text: `ceil(word_count / wpm)`, 0 for text without words |
+| normalize | Unicode NFKC form of a text (canonical composition plus compatibility mappings, e.g. `ﬁ` -> `fi`); case, accents, whitespace and punctuation are untouched |

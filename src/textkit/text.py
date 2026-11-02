@@ -58,3 +58,8 @@ def reading_time(text: str, wpm: int = 200) -> int:
     if wpm <= 0:
         raise ValueError("wpm must be > 0")
     return math.ceil(word_count(text) / wpm)
+
+
+def normalize(text: str) -> str:
+    """Return ``text`` in Unicode NFKC form, with no other transformation."""
+    return unicodedata.normalize("NFKC", text)
