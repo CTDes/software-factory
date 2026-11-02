@@ -82,3 +82,11 @@ def sentence_count(text: str) -> int:
     Example: ``sentence_count("Hola. ¿Qué tal?! Bien")`` -> ``3``.
     """
     return sum(1 for segment in _SENTENCE_END_RE.split(text) if _WORD_RE.search(segment))
+
+
+def char_count(text: str) -> int:
+    """Count characters (code points) in ``text`` that are not whitespace.
+
+    Example: ``char_count(" a b\\tc\\n1!")`` -> ``5``.
+    """
+    return sum(1 for ch in text if not ch.isspace())

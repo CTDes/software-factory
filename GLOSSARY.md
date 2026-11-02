@@ -10,4 +10,5 @@
 | reading time | Minutes to read a text: `ceil(word_count / wpm)`, 0 for text without words |
 | normalize | Unicode NFKC form of a text (canonical composition plus compatibility mappings, e.g. `ﬁ` -> `fi`); case, accents, whitespace and punctuation are untouched |
 | sentence | Segment of text ending in a run of `.`, `!` or `?` (a run counts as one end); the unterminated tail counts too. A segment counts only if it contains a word |
+| char count | Number of code points in a text for which `str.isspace()` is false (punctuation and digits count; combining marks count individually) |
 | unique words | Number of distinct words in a text after `casefold()`, using the same definition of *word* |

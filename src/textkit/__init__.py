@@ -1,6 +1,7 @@
 """textkit: small text utilities."""
 
 from textkit.text import (
+    char_count,
     initials,
     normalize,
     reading_time,
@@ -12,6 +13,7 @@ from textkit.text import (
 )
 
 __all__ = [
+    "char_count",
     "initials",
     "normalize",
     "reading_time",
