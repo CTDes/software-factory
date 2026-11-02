@@ -66,5 +66,7 @@ def sentence_count(text: str) -> int:
 
     A segment only counts if it contains a word; the unterminated tail counts
     under the same rule.
+
+    Example: ``sentence_count("Hola. ¿Qué tal?! Bien")`` -> ``3``.
     """
     return sum(1 for segment in _SENTENCE_END_RE.split(text) if _WORD_RE.search(segment))
