@@ -34,7 +34,7 @@ def word_count(text: str) -> int:
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
     """Shorten ``text`` to at most ``limit`` characters, suffix included.
 
-    Cuts at the last word boundary that fits. Text that already fits is
+    Cuts at the last word boundary that fits (any whitespace character). Text that already fits is
     returned unchanged.
     """
     if limit < len(suffix):
@@ -43,8 +43,10 @@ def truncate(text: str, limit: int, suffix: str = "…") -> str:
         return text
     room = limit - len(suffix)
     cut = text[:room]
-    if room < len(text) and not text[room].isspace() and " " in cut:
-        cut = cut[: cut.rfind(" ")]
+    if room < len(text) and not text[room].isspace():
+        last = max((i for i, ch in enumerate(cut) if ch.isspace()), default=-1)
+        if last >= 0:
+            cut = cut[:last]
     return cut.rstrip() + suffix
 
 
