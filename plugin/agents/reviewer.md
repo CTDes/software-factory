@@ -18,6 +18,9 @@ base. Tu shell solo admite git de lectura (`diff`, `log`, `show`, `merge-base`, 
 - `cd <worktree> && git diff origin/<base>...HEAD` (tres puntos: contra el merge-base)
 - `cd <worktree> && git log --oneline origin/<base>..HEAD`
 
+Para leer ficheros (plan, build, código, docs) usa la herramienta **Read**, nunca `cat`, `head`
+ni similares por Bash: el shell solo admite git de lectura y cualquier otro comando se bloquea.
+
 No ejecutas tests: el gate ya lo hizo y está en verde. Lee también `plan.md`, `build.md`,
 `docs/architecture.md`, `GLOSSARY.md` y `CODING_STANDARDS.md` o `CONTRIBUTING.md` si existen,
 todo dentro del worktree o de la carpeta del job.
