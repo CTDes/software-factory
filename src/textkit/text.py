@@ -32,6 +32,11 @@ def word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
 
 
+def unique_words(text: str) -> int:
+    """Count distinct words after casefolding; same word definition as word_count."""
+    return len({w.casefold() for w in _WORD_RE.findall(text)})
+
+
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
     """Shorten ``text`` to at most ``limit`` characters, suffix included.
 
