@@ -56,7 +56,7 @@ plugin software-factory/                (instalado en ~/.claude/plugins/cache/�
   hooks/hooks.json, agent_guard.py       guardarraíles de los agentes (PreToolUse, por agent_type)
   bin/factory-job                        máquina de estados; único con efectos en git remoto y GitHub
   bin/factory-gate                       ejecuta checks.sh y comprueba rutas protegidas y evidencia
-  bin/factory-init                       prepara un repo nuevo (ficheros, settings, etiquetas)
+  bin/factory-init                       prepara un repo, nuevo o existente (ficheros, settings, etiquetas)
   lib/                                   módulos Python compartidos
   tests/                                 tests (unittest, sin red, GitHub fake)
   templates/                             lo que escribe factory-init
@@ -446,3 +446,6 @@ Registro de lo que cambió respecto al encargo, fase a fase, con el motivo. Todo
 - Los plugins no pueden aportar permisos: `factory-init` los escribe en `.claude/settings.json` de cada repo, junto con el marketplace (con `autoUpdate`) y el plugin activado.
 - Abrir un repo cuyo `settings.json` activa el plugin crea una instalación de ámbito proyecto además de la de usuario. Con `autoUpdate` las dos se actualizan solas; a mano, cada una con su `claude plugin update … --scope`.
 - Nombres: agentes `software-factory:<agente>`, skills `/software-factory:<skill>`, ejecutables `factory-job`, `factory-gate`, `factory-init`.
+
+**Después de la fase 6**
+- 0.1.3, `factory-init` en repos existentes: si `CLAUDE.md` ya existe y no menciona `factory/checks.sh`, le añade una sección `## Software factory` (antes se quedaba sin el contexto de la fábrica); avisa de los workflows que ya hay en `.github/workflows/`, porque el check requerido debe ejecutar `checks.sh`; `--labels` crea solo las etiquetas que faltan, sin `--force` (antes sobrescribía color y descripción de las existentes), y avisa si la etiqueta `queue` o `spec` ya existe con issues abiertas, porque la fábrica las tomaría como trabajo.

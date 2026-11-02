@@ -24,6 +24,17 @@ workflow, `.worktreeinclude`, `CLAUDE.md`, `GLOSSARY.md`, `docs/architecture.md`
 labels. Only `factory/checks.sh`, `factory/config.json` and the context files are
 project-specific; everything else comes from the plugin.
 
+In an existing repository it never overwrites anything (unless `--force`, which does not apply
+to labels):
+
+- An existing `CLAUDE.md` gets a `## Software factory` section appended, unless it already
+  mentions `factory/checks.sh`.
+- Other workflows in `.github/workflows/` produce a warning: the required check must run
+  `factory/checks.sh`, so make one of them call it or drop their duplicated steps.
+- `--labels` only creates the missing labels and leaves existing ones untouched. If the
+  `queue` or `spec` label already exists with open issues, it warns: the factory would pick
+  them up. Rename the label in `factory/config.json` and rerun `factory-init --labels`.
+
 ## Use
 
 - `/software-factory:factory run` drains every labelled issue and spec.

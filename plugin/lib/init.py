@@ -2,6 +2,8 @@
 
 Writes only what is missing (or everything with --force), merges .gitignore and
 .claude/settings.json instead of replacing them, and can create the GitHub labels.
+In an existing repository it also appends the factory section to an existing CLAUDE.md,
+warns about CI workflows that already exist, and never overwrites existing labels.
 """
 
 from __future__ import annotations
@@ -29,6 +31,10 @@ FILES = [
     ("GLOSSARY.md", "GLOSSARY.md", False),
     ("architecture.md", "docs/architecture.md", False),
 ]
+
+CLAUDE_MD_MARKER = "factory/checks.sh"  # an existing CLAUDE.md that mentions it is left alone
+# Labels the factory reads to find work: open issues already carrying them get picked up.
+WORK_LABEL_KEYS = ("queue", "spec")
 
 LABEL_COLORS = {
     "queue": "0E8A16",
@@ -72,13 +78,82 @@ def merge_settings(existing: dict[str, Any], template: dict[str, Any]) -> dict[s
     return out
 
 
+def other_workflows(root: Path) -> list[str]:
+    wf = root / ".github" / "workflows"
+    if not wf.is_dir():
+        return []
+    return sorted(
+        p.name
+        for p in wf.iterdir()
+        if p.is_file() and p.suffix in (".yml", ".yaml") and p.name != "checks.yml"
+    )
+
+
+def append_claude_section(path: Path) -> bool:
+    """Append the factory section to an existing CLAUDE.md unless it already mentions checks.sh."""
+    text = path.read_text(encoding="utf-8")
+    if CLAUDE_MD_MARKER in text:
+        return False
+    section = (TEMPLATES / "CLAUDE-section.md").read_text(encoding="utf-8")
+    sep = "" if text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+    path.write_text(text + sep + section, encoding="utf-8")
+    return True
+
+
+def _gh_list(root: Path, *args: str, field: str) -> list[dict[str, Any]]:
+    out = run(["gh", *args, "--limit", "1000", "--json", field], cwd=root).stdout
+    return list(json.loads(out or "[]"))
+
+
+def create_labels(root: Path) -> list[str]:
+    """Create the config labels that are missing. Existing labels are never modified."""
+    report: list[str] = []
+    cfg = json.loads((root / "factory" / "config.json").read_text(encoding="utf-8"))
+    existing = {d["name"] for d in _gh_list(root, "label", "list", field="name")}
+    for key, label in cfg["labels"].items():
+        if label not in existing:
+            run(
+                [
+                    "gh",
+                    "label",
+                    "create",
+                    label,
+                    "--color",
+                    LABEL_COLORS.get(key, "BFD4F2"),
+                    "--description",
+                    f"software factory: {key}",
+                ],
+                cwd=root,
+            )
+            report.append(f"label    {label}")
+            continue
+        report.append(f"kept     label {label} (already exists)")
+        if key not in WORK_LABEL_KEYS:
+            continue
+        issues = _gh_list(
+            root, "issue", "list", "--state", "open", "--label", label, field="number"
+        )
+        if issues:
+            report.append(
+                f"warn     label {label} already has {len(issues)} open issue(s): "
+                "/software-factory:factory run will treat them as factory work. If that is "
+                "not intended, rename it under `labels` in factory/config.json and rerun "
+                "factory-init --labels"
+            )
+    return report
+
+
 def init(root: Path, base: str | None, force: bool, labels: bool) -> list[str]:
     report: list[str] = []
     base = base or default_branch(root)
+    workflows = other_workflows(root)
     for name, rel, executable in FILES:
         dst = root / rel
         if dst.exists() and not force:
-            report.append(f"kept     {rel}")
+            if name == "CLAUDE.md" and append_claude_section(dst):
+                report.append(f"updated  {rel} (+software factory section)")
+            else:
+                report.append(f"kept     {rel}")
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         text = (TEMPLATES / name).read_text(encoding="utf-8")
@@ -117,32 +192,23 @@ def init(root: Path, base: str | None, force: bool, labels: bool) -> list[str]:
     else:
         report.append("kept     .claude/settings.json")
 
+    if workflows:
+        report.append(
+            f"warn     existing workflows: {', '.join(workflows)}. The required check must run "
+            "factory/checks.sh: make one of them call it, or keep checks.yml and drop the "
+            "duplicated steps"
+        )
+
     if labels:
-        cfg = json.loads((root / "factory" / "config.json").read_text(encoding="utf-8"))
-        for key, label in cfg["labels"].items():
-            run(
-                [
-                    "gh",
-                    "label",
-                    "create",
-                    label,
-                    "--force",
-                    "--color",
-                    LABEL_COLORS.get(key, "BFD4F2"),
-                    "--description",
-                    f"software factory: {key}",
-                ],
-                cwd=root,
-            )
-            report.append(f"label    {label}")
+        report.extend(create_labels(root))
     return report
 
 
 NEXT_STEPS = """
 Next steps:
   1. Edit factory/checks.sh (lint, typecheck, tests, build) until it passes on {base}.
-  2. Fill CLAUDE.md, GLOSSARY.md and docs/architecture.md; add your existing tests to
-     protected_paths in factory/config.json.
+  2. Fill CLAUDE.md (and its "Software factory" section), GLOSSARY.md and
+     docs/architecture.md; add your existing tests to protected_paths in factory/config.json.
   3. Commit, push, and make the `checks` workflow a required check on {base}.
   4. Label an issue `ready-for-agent` and run /software-factory:factory run.
 """
