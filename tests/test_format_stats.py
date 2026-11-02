@@ -1,0 +1,38 @@
+import unittest
+
+import textkit
+from textkit import format_stats
+
+
+class FormatStatsTest(unittest.TestCase):
+    def test_formats_example_text(self) -> None:
+        self.assertEqual(
+            format_stats("Hola hola. Adiós!"),
+            "Palabras: 3\nCaracteres: 15\nPalabras únicas: 2\nFrases: 2",
+        )
+
+    def test_empty_text_reports_zeros(self) -> None:
+        self.assertEqual(
+            format_stats(""),
+            "Palabras: 0\nCaracteres: 0\nPalabras únicas: 0\nFrases: 0",
+        )
+
+    def test_always_four_lines_without_trailing_newline(self) -> None:
+        for text in ["Hola mundo.\n", "   ", "a", "Uno. Dos!\n\n"]:
+            out = format_stats(text)
+            self.assertFalse(out.endswith("\n"), repr(text))
+            self.assertEqual(len(out.split("\n")), 4, repr(text))
+
+    def test_repeated_words_with_different_case(self) -> None:
+        self.assertEqual(
+            format_stats("Uno dos. DOS tres! ¿Tres?"),
+            "Palabras: 5\nCaracteres: 21\nPalabras únicas: 3\nFrases: 3",
+        )
+
+    def test_exported_and_all_sorted(self) -> None:
+        self.assertIn("format_stats", textkit.__all__)
+        self.assertEqual(textkit.__all__, sorted(textkit.__all__))
+
+
+if __name__ == "__main__":
+    unittest.main()

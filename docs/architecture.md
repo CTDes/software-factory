@@ -4,8 +4,8 @@
 
 | Module | Responsibility | Public interface |
 | --- | --- | --- |
-| `textkit` (`src/textkit/__init__.py`) | Package facade; the only supported import path | re-exports `char_count`, `slugify`, `word_count`, `truncate`, `initials`, `reading_time`, `sentence_count`, `normalize`, `unique_words`, `longest_word`, `text_stats` |
-| `textkit.text` (`src/textkit/text.py`) | Pure string functions | `slugify(text, max_length=None) -> str`, `word_count(text) -> int`, `truncate(text, limit, suffix="…") -> str`, `initials(name) -> str`, `reading_time(text, wpm=200) -> int`, `sentence_count(text) -> int`, `normalize(text) -> str`, `char_count(text) -> int`, `unique_words(text) -> int`, `longest_word(text) -> str`, `text_stats(text) -> dict[str, int]` (keys `words`, `chars`, `unique_words`, `sentences`) |
+| `textkit` (`src/textkit/__init__.py`) | Package facade; the only supported import path | re-exports `char_count`, `slugify`, `word_count`, `truncate`, `initials`, `reading_time`, `sentence_count`, `normalize`, `unique_words`, `longest_word`, `text_stats`, `format_stats` |
+| `textkit.text` (`src/textkit/text.py`) | Pure string functions | `slugify(text, max_length=None) -> str`, `word_count(text) -> int`, `truncate(text, limit, suffix="…") -> str`, `initials(name) -> str`, `reading_time(text, wpm=200) -> int`, `sentence_count(text) -> int`, `normalize(text) -> str`, `char_count(text) -> int`, `unique_words(text) -> int`, `longest_word(text) -> str`, `text_stats(text) -> dict[str, int]` (keys `words`, `chars`, `unique_words`, `sentences`), `format_stats(text) -> str` (four-line report built from `text_stats`) |
 
 ## Allowed dependencies
 

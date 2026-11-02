@@ -2,6 +2,7 @@
 
 from textkit.text import (
     char_count,
+    format_stats,
     initials,
     longest_word,
     normalize,
@@ -16,6 +17,7 @@ from textkit.text import (
 
 __all__ = [
     "char_count",
+    "format_stats",
     "initials",
     "longest_word",
     "normalize",

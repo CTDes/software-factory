@@ -114,3 +114,20 @@ def longest_word(text: str) -> str:
     Example: ``longest_word("¡Extraordinario!")`` -> ``"Extraordinario"``.
     """
     return max(_WORD_RE.findall(text), key=len, default="")
+
+
+def format_stats(text: str) -> str:
+    """Return a four-line human-readable report of ``text_stats(text)``.
+
+    Lines (joined by ``\\n``, no trailing newline): ``Palabras``, ``Caracteres``,
+    ``Palabras únicas`` and ``Frases``.
+    """
+    stats = text_stats(text)
+    return "\n".join(
+        [
+            f"Palabras: {stats['words']}",
+            f"Caracteres: {stats['chars']}",
+            f"Palabras únicas: {stats['unique_words']}",
+            f"Frases: {stats['sentences']}",
+        ]
+    )
