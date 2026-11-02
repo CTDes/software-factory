@@ -213,7 +213,7 @@ class FinalTest(SpecTestCase):
             ("final-review", "software-factory:reviewer", "opus"),
         )
         self.assertIn("git diff origin/main...HEAD", r["prompt"])
-        self.assertIn("issue de la spec es el criterio", r["prompt"])
+        self.assertIn("the spec issue is the criterion", r["prompt"])
         machine.start(self.ctx, self.spec_job())
         self.write_review(self.spec_job(), "PASS")
         out = machine.advance(self.ctx, self.spec_job())

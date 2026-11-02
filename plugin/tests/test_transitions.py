@@ -33,7 +33,7 @@ class IntakeTransitions(FactoryTestCase):
         job = self.advance(job)
         self.assertEqual(job.stage, "needs-info")
         self.assertIn("needs-info", self.labels(12))
-        self.assertIn("¿Enteros o floats?", self.comments(12)[-1])
+        self.assertIn("Integers or floats?", self.comments(12)[-1])
         self.assertIsNotNone(job["asked_at"])
 
     def test_intake_to_rejected(self) -> None:
@@ -43,7 +43,7 @@ class IntakeTransitions(FactoryTestCase):
         job = self.advance(job)
         self.assertEqual(job.stage, "rejected")
         self.assertNotIn(QUEUE, self.labels(12))
-        self.assertIn("Fuera de alcance", self.comments(12)[-1])
+        self.assertIn("Out of scope", self.comments(12)[-1])
         self.assertFalse(job.worktree.exists())
 
     def test_intake_to_needs_human_after_two_contract_failures(self) -> None:
@@ -138,8 +138,8 @@ class BuildTransitions(FactoryTestCase):
         job = self.advance(job)
         self.assertEqual(job.stage, "needs-human")
         self.assertIn("ready-for-human", self.labels(12))
-        self.assertIn("firma de add()", self.comments(12)[-1])
-        self.assertIn("firma de add()", self.comments(job["pr"])[-1])
+        self.assertIn("signature of add()", self.comments(12)[-1])
+        self.assertIn("signature of add()", self.comments(job["pr"])[-1])
 
 
 class GateTransitions(FactoryTestCase):
@@ -194,7 +194,7 @@ class ReviewTransitions(FactoryTestCase):
         self.assertEqual(job.stage, "ready")
         self.assertFalse(self.gh.pr(job["pr"])["draft"])
         self.assertIn("ready-for-human", self.labels(12))
-        self.assertIn("listo para un humano", self.comments(12)[-1])
+        self.assertIn("ready for a human", self.comments(12)[-1])
 
     def test_review_to_merging_for_spec_ticket(self) -> None:
         job = self.start(self.make_spec_ticket())

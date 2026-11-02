@@ -48,10 +48,10 @@ def check_evidence(job: Job, worktree: Path) -> list[str]:
         return [str(exc)]
     if build["STATUS"] != "READY":
         return ["build.md: STATUS is not READY"]
-    evidence, malformed = contracts.parse_evidence(build.section("Evidencia"))
+    evidence, malformed = contracts.parse_evidence(build.section("Evidence"))
     problems += [f"malformed evidence line: {line!r}" for line in malformed]
     if not evidence:
-        problems.append("build.md: '## Evidencia' lists no evidence")
+        problems.append("build.md: '## Evidence' lists no evidence")
     root = worktree.resolve()
     for ev in evidence:
         label = f"{ev.criterion}: {ev.path}::{ev.name}"
@@ -69,7 +69,7 @@ def check_evidence(job: Job, worktree: Path) -> list[str]:
     if plan_path.exists():
         try:
             plan = contracts.read_plan(plan_path)
-            wanted = contracts.criteria_ids(plan.section("Criterios de aceptación"))
+            wanted = contracts.criteria_ids(plan.section("Acceptance criteria"))
         except contracts.ContractError:
             wanted = []
         covered = {ev.criterion for ev in evidence}
@@ -132,24 +132,24 @@ def render(g: GateResult, diff_base: str) -> str:
         f"GATE: {'PASS' if g.passed else 'FAIL'}",
         f"PROTECTED: {', '.join(g.protected) if g.protected else 'none'}",
         "",
-        "## Resumen",
+        "## Summary",
         "",
         f"- checks.sh: {'OK' if g.returncode == 0 else f'FAILED (exit {g.returncode})'}"
         + (" — TIMEOUT" if g.timed_out else ""),
-        f"- Rutas protegidas modificadas o borradas: {len(g.protected)}",
-        f"- Problemas de evidencia: {len(g.evidence_problems)}",
+        f"- Protected paths modified or deleted: {len(g.protected)}",
+        f"- Evidence problems: {len(g.evidence_problems)}",
         "",
-        "## Comando",
+        "## Command",
         "",
         f"- {g.command}",
-        f"- Duración: {g.duration_s:.1f}s",
-        f"- Diff contra: {diff_base}",
+        f"- Duration: {g.duration_s:.1f}s",
+        f"- Diff against: {diff_base}",
         "",
-        "## Rutas protegidas",
+        "## Protected paths",
         "",
     ]
     lines += [f"- {p}" for p in g.protected] or ["- none"]
-    lines += ["", "## Evidencia no encontrada", ""]
+    lines += ["", "## Missing evidence", ""]
     lines += [f"- {p}" for p in g.evidence_problems] or ["- none"]
-    lines += ["", "## Log (cola)", "", "```text", g.log_tail, "```", ""]
+    lines += ["", "## Log (tail)", "", "```text", g.log_tail, "```", ""]
     return "\n".join(lines)

@@ -101,7 +101,7 @@ def _find_cycle(graph: dict[int, list[int]]) -> list[int] | None:
 
 
 def _graph_text(graph: dict[int, list[int]], titles: dict[int, str]) -> str:
-    lines = ["| Ticket | Bloqueado por |", "| --- | --- |"]
+    lines = ["| Ticket | Blocked by |", "| --- | --- |"]
     for n in sorted(graph):
         blockers = ", ".join(f"#{b}" for b in graph[n]) or "—"
         lines.append(f"| #{n} {titles.get(n, '')} | {blockers} |")
@@ -192,7 +192,7 @@ def create(ctx: Ctx, number: int) -> str:
         number,
         say(
             spec,
-            f"spec aceptada en la fábrica. Rama de integración `{spec['branch']}` creada desde "
+            f"spec accepted by the factory. Integration branch `{spec['branch']}` created from "
             f"`{cfg['base_branch']}`.\n\n{_graph_text(graph, titles)}",
         ),
     )
@@ -342,9 +342,7 @@ def advance(ctx: Ctx, spec: Job) -> str:
                     f"{exc}\n(contract failure {spec['contract_failures']}/{MAX_CONTRACT_FAILURES - 1}: "
                     "send this error back to the same agent once)"
                 ) from exc
-            t = _escalate(
-                ctx, spec, "un agente incumplió el contrato de fichero dos veces", str(exc)
-            )
+            t = _escalate(ctx, spec, "an agent broke the file contract twice", str(exc))
         return apply(ctx, spec, t)
     if stage in ("ready", "needs-human"):
         if stage == "ready" and spec.get("pr") and ctx.gh.pr(spec["pr"])["state"] == "MERGED":
@@ -381,7 +379,7 @@ def _from_final_review(ctx: Ctx, spec: Job) -> str:
         return apply(
             ctx,
             spec,
-            _escalate(ctx, spec, f"el gate final sigue en rojo tras {spec['round']} rondas"),
+            _escalate(ctx, spec, f"the final gate is still red after {spec['round']} rounds"),
         )
     review_path = rd / "review.md"
     if not review_path.exists():
@@ -403,13 +401,15 @@ def _from_final_review(ctx: Ctx, spec: Job) -> str:
         return apply(
             ctx,
             spec,
-            _escalate(ctx, spec, f"la review final pide cambios tras {spec['round']} rondas"),
+            _escalate(
+                ctx, spec, f"the final review still asks for changes after {spec['round']} rounds"
+            ),
         )
     return apply(ctx, spec, _to_ready(ctx, spec))
 
 
 def _summary(spec: Job) -> str:
-    rows = ["| Ticket | Estado | Rondas | Escalados |", "| --- | --- | --- | --- |"]
+    rows = ["| Ticket | Stage | Rounds | Escalations |", "| --- | --- | --- | --- |"]
     total_esc = 0
     for t in sorted(tickets_of(spec), key=lambda j: j["issue"]):
         log = t.file("events.log")
@@ -425,7 +425,7 @@ def _summary(spec: Job) -> str:
         total_esc += esc
         rows.append(f"| #{t['issue']} {t['title']} | {t.stage} | {t['round']} | {esc} |")
     rows.append("")
-    rows.append(f"Rondas finales de la spec: {spec['round']}. Escalados en tickets: {total_esc}.")
+    rows.append(f"Final rounds of the spec: {spec['round']}. Escalations in tickets: {total_esc}.")
     return "\n".join(rows)
 
 
@@ -439,7 +439,7 @@ def _to_ready(ctx: Ctx, spec: Job) -> Transition:
             head=spec["branch"],
             base=cfg["base_branch"],
             title=spec["title"],
-            body=f"Closes #{n}\n\n{issue_md.FACTORY_PREFIX} {spec.id} · spec construida por la fábrica.\n\n{summary}",
+            body=f"Closes #{n}\n\n{issue_md.FACTORY_PREFIX} {spec.id} · spec built by the factory.\n\n{summary}",
             draft=False,
         )
         updates["pr"] = pr["number"]
@@ -447,7 +447,7 @@ def _to_ready(ctx: Ctx, spec: Job) -> Transition:
     effects: list[Effect] = [
         open_pr,
         _label(ctx, n, cfg.label("needs_human")),
-        _comment(ctx, n, say(spec, f"spec lista para probar y mergear.\n\n{summary}")),
+        _comment(ctx, n, say(spec, f"spec ready to test and merge.\n\n{summary}")),
     ]
     return Transition("ready", "FINAL PASS", effects, updates)
 
@@ -455,7 +455,7 @@ def _to_ready(ctx: Ctx, spec: Job) -> Transition:
 def _from_final_build(ctx: Ctx, spec: Job) -> Transition:
     build = contracts.read_build(spec.file("build.md"))
     if build["STATUS"] == "BLOCKED":
-        return _escalate(ctx, spec, "el builder final está bloqueado", build.section("Bloqueo"))
+        return _escalate(ctx, spec, "the final builder is blocked", build.section("Blocker"))
     wt = spec.worktree
     if not git.is_clean(wt):
         raise contracts.ContractError(

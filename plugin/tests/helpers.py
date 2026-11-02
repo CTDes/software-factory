@@ -205,10 +205,10 @@ class FactoryTestCase(unittest.TestCase):
         self, job: jobs.Job, decision: str = "ACCEPT", risk: str = "medium", surfaces: str = "ui"
     ) -> None:
         body = {
-            "ACCEPT": "## Alcance\n\nAdd sub().\n\n## Criterios de aceptación\n\n- C1: sub(3, 1) == 2\n\n"
-            "## Seams\n\n`mod.sub`\n\n## Notas\n\nnone\n",
-            "NEEDS-INFO": "## Pregunta\n\n¿Enteros o floats?\n",
-            "REJECT": "## Motivo\n\nFuera de alcance.\n",
+            "ACCEPT": "## Scope\n\nAdd sub().\n\n## Acceptance criteria\n\n- C1: sub(3, 1) == 2\n\n"
+            "## Seams\n\n`mod.sub`\n\n## Notes\n\nnone\n",
+            "NEEDS-INFO": "## Question\n\nIntegers or floats?\n",
+            "REJECT": "## Reason\n\nOut of scope.\n",
         }[decision]
         self.write(
             job.dir,
@@ -239,9 +239,9 @@ class FactoryTestCase(unittest.TestCase):
     ) -> None:
         if status == "READY":
             ev = evidence or "C1: tests/test_sub.py::test_sub — sub(3, 1) == 2"
-            text = f"STATUS: READY\n\n## Evidencia\n\n{ev}\n"
+            text = f"STATUS: READY\n\n## Evidence\n\n{ev}\n"
         else:
-            text = "STATUS: BLOCKED\n\n## Bloqueo\n\n¿Puedo cambiar la firma de add()?\n"
+            text = "STATUS: BLOCKED\n\n## Blocker\n\nMay I change the signature of add()?\n"
         self.write(job.dir, "build.md", text)
 
     def write_checks(self, job: jobs.Job, gate: str = "PASS") -> None:
@@ -251,7 +251,7 @@ class FactoryTestCase(unittest.TestCase):
         self.write(
             job.round_dir(),
             "review.md",
-            f"VERDICT: {verdict}\n\n## Estándares\n\nok\n\n## Spec\n\nok\n\n## Arquitectura\n\nok\n",
+            f"VERDICT: {verdict}\n\n## Standards\n\nok\n\n## Spec\n\nok\n\n## Architecture\n\nok\n",
         )
 
     # ------------------------------------------------------------ driving

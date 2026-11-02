@@ -8,10 +8,6 @@ It started as a brief written in Spanish for Claude Code to build, in six phases
 archived unchanged in [`docs/original-brief.es.md`](docs/original-brief.es.md). What changed
 along the way is recorded in [History](#history).
 
-> **Language note:** the agents' prompts, the file headings they write and the comments the factory
-> posts on GitHub are in Spanish. Headings such as `## Criterios de aceptación` in the tables below
-> are the literal strings the parser expects, not translations.
-
 ## Goals and principles
 
 The factory works at two levels:
@@ -204,12 +200,16 @@ the base counts as a contract failure too.
 | File | Required header | Body |
 | --- | --- | --- |
 | `issue.md` | written by `factory-job`: title, author, URL | Issue body and comments inside a block delimited by `<<<ISSUE` and `ISSUE>>>`, with a notice that it is data |
-| `plan.md` | `DECISION: ACCEPT\|NEEDS-INFO\|REJECT`, `RISK: low\|medium\|high`, `SURFACES: a, b` (or `none`) | `## Alcance`, `## Criterios de aceptación` (C1, C2… testable), `## Seams` (where the tests live), `## Notas`. With NEEDS-INFO: `## Pregunta`. With REJECT: `## Motivo` |
-| `build.md` | `STATUS: READY\|BLOCKED` | `## Evidencia`: one line per criterion, `C1: <test path>::<name> — what it proves`. With BLOCKED: `## Bloqueo` |
+| `plan.md` | `DECISION: ACCEPT\|NEEDS-INFO\|REJECT`, `RISK: low\|medium\|high`, `SURFACES: a, b` (or `none`) | `## Scope`, `## Acceptance criteria` (C1, C2… testable), `## Seams` (where the tests live), `## Notes`. With NEEDS-INFO: `## Question`. With REJECT: `## Reason` |
+| `build.md` | `STATUS: READY\|BLOCKED` | `## Evidence`: one line per criterion, `C1: <test path>::<name> — what it proves`. With BLOCKED: `## Blocker` |
 | `round-N/checks.md` | `GATE: PASS\|FAIL`, `PROTECTED: none` or the list of paths touched | Command, duration, missing evidence and the last `log_tail_lines` lines |
-| `round-N/review.md` | `VERDICT: PASS\|CHANGES` | `## Estándares`, `## Spec`, `## Arquitectura` and, when the `security` surface is set, `## Seguridad`. Each finding with file, line and whether it blocks |
+| `round-N/review.md` | `VERDICT: PASS\|CHANGES` | `## Standards`, `## Spec`, `## Architecture` and, when the `security` surface is set, `## Security`. Each finding with file, line and whether it blocks |
 | `round-N/merge.md` | `MERGE: CONFLICT\|GATE-FAIL`, written by `factory-job merge` | Conflicting files or the gate log after integrating the base |
 | `rework-N.md` | written by `factory-job` | PR and issue comments newer than the last push, quoted |
+
+Section headings are matched ignoring case. The Spanish headings used before 0.2.0
+(`## Alcance`, `## Criterios de aceptación`, `## Evidencia`, `## Estándares`…) are still
+accepted, so jobs that were in flight keep parsing.
 
 Agents return a single line to the orchestrator: the main header of their file
 (`ACCEPT risk=medium surfaces=ui`, `READY`, `CHANGES`…). The orchestrator only prints it.
@@ -380,11 +380,11 @@ Seams are existing public interfaces or ones described in `architecture.md`, as 
 
 **reviewer.** Does not run tests; the gate already did. It writes separate sections that are not
 mixed or ranked against each other:
-- **Estándares:** `CODING_STANDARDS.md` and the twelve Fowler smells from `code-review`.
+- **Standards:** `CODING_STANDARDS.md` and the twelve Fowler smells from `code-review`.
 - **Spec:** is every criterion met, with nothing missing and nothing extra?
-- **Arquitectura:** module boundaries, allowed dependencies, folder ownership, and
+- **Architecture:** module boundaries, allowed dependencies, folder ownership, and
   `architecture.md` updated if an interface changed.
-- **Seguridad:** only when the `security` surface is set.
+- **Security:** only when the `security` surface is set.
 
 It returns `CHANGES` only for blocking findings and lists the rest as non-blocking. For a spec's
 final review, the same agent runs with the `final_reviewer` model, the diff
@@ -579,6 +579,10 @@ before it was applied.
     would take them as work.
 - The design was rewritten in English as a reference of the current implementation; the
   original Spanish brief is archived in `docs/original-brief.es.md`.
+- 0.2.0, everything in English: the agents' and orchestrator's prompts, the prompts built by
+  `job next`, the file-contract headings, `issue.md`, `checks.md`, `merge.md`, `rework-N.md` and
+  every comment and PR body the factory posts. The parser still accepts the old Spanish headings,
+  ignoring case, so jobs started before the switch keep working.
 
 ## References
 

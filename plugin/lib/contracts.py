@@ -18,6 +18,24 @@ SURFACE = r"[a-z0-9][a-z0-9_-]*"
 SURFACES_RE = rf"none|{SURFACE}(?:\s*,\s*{SURFACE})*"
 
 
+# Section headings are English. The Spanish ones written before 0.2.0 are still accepted,
+# so jobs that were in flight during the switch keep parsing. Matching ignores case.
+SECTION_ALIASES: dict[str, tuple[str, ...]] = {
+    "Scope": ("Alcance",),
+    "Acceptance criteria": ("Criterios de aceptación",),
+    "Seams": (),
+    "Notes": ("Notas",),
+    "Question": ("Pregunta",),
+    "Reason": ("Motivo",),
+    "Evidence": ("Evidencia",),
+    "Blocker": ("Bloqueo",),
+    "Standards": ("Estándares",),
+    "Spec": (),
+    "Architecture": ("Arquitectura",),
+    "Security": ("Seguridad",),
+}
+
+
 class ContractError(FactoryError):
     def __init__(self, path: Path, line: int | None, message: str) -> None:
         self.path = path
@@ -44,7 +62,12 @@ class Document:
         return self.header[key]
 
     def section(self, name: str) -> str:
-        return self.sections.get(name, "")
+        """Body of `## <name>`, also found under its pre-0.2.0 Spanish alias, ignoring case."""
+        wanted = {n.casefold() for n in (name, *SECTION_ALIASES.get(name, ()))}
+        for heading, body in self.sections.items():
+            if heading.casefold() in wanted:
+                return body
+        return ""
 
 
 PLAN = [
@@ -131,16 +154,16 @@ def read_plan(path: Path) -> Document:
     decision = doc["DECISION"]
     if decision == "ACCEPT":
         _require_sections(
-            doc, ["Alcance", "Criterios de aceptación", "Seams"], "required with DECISION: ACCEPT"
+            doc, ["Scope", "Acceptance criteria", "Seams"], "required with DECISION: ACCEPT"
         )
-        if not criteria_ids(doc.section("Criterios de aceptación")):
+        if not criteria_ids(doc.section("Acceptance criteria")):
             raise ContractError(
-                path, None, "'## Criterios de aceptación' has no criteria (lines like '- C1: …')"
+                path, None, "'## Acceptance criteria' has no criteria (lines like '- C1: …')"
             )
     elif decision == "NEEDS-INFO":
-        _require_sections(doc, ["Pregunta"], "required with DECISION: NEEDS-INFO")
+        _require_sections(doc, ["Question"], "required with DECISION: NEEDS-INFO")
     else:
-        _require_sections(doc, ["Motivo"], "required with DECISION: REJECT")
+        _require_sections(doc, ["Reason"], "required with DECISION: REJECT")
     return doc
 
 
@@ -152,9 +175,9 @@ def surfaces(doc: Document) -> list[str]:
 def read_build(path: Path) -> Document:
     doc = parse(path, BUILD)
     if doc["STATUS"] == "READY":
-        _require_sections(doc, ["Evidencia"], "required with STATUS: READY")
+        _require_sections(doc, ["Evidence"], "required with STATUS: READY")
     else:
-        _require_sections(doc, ["Bloqueo"], "required with STATUS: BLOCKED")
+        _require_sections(doc, ["Blocker"], "required with STATUS: BLOCKED")
     return doc
 
 
@@ -164,7 +187,7 @@ def read_checks(path: Path) -> Document:
 
 def read_review(path: Path, security: bool) -> Document:
     doc = parse(path, REVIEW)
-    required = ["Estándares", "Spec", "Arquitectura"] + (["Seguridad"] if security else [])
+    required = ["Standards", "Spec", "Architecture"] + (["Security"] if security else [])
     _require_sections(doc, required, "required in every review")
     return doc
 
@@ -186,7 +209,7 @@ class Evidence:
 
 
 def parse_evidence(text: str) -> tuple[list[Evidence], list[str]]:
-    """Return (evidence, malformed lines) from the body of '## Evidencia'."""
+    """Return (evidence, malformed lines) from the body of '## Evidence'."""
     found: list[Evidence] = []
     bad: list[str] = []
     for i, line in enumerate(text.splitlines(), start=1):

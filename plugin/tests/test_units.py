@@ -25,9 +25,9 @@ class GlobTest(unittest.TestCase):
 
 
 class ContractTest(unittest.TestCase):
-    def _doc(self, text: str) -> Path:
+    def _doc(self, text: str, name: str = "plan.md") -> Path:
         d = Path(tempfile.mkdtemp())
-        p = d / "plan.md"
+        p = d / name
         p.write_text(text)
         return p
 
@@ -46,22 +46,54 @@ class ContractTest(unittest.TestCase):
             contracts.parse(self._doc("\nDECISION: ACCEPT\n"), contracts.PLAN)
 
     def test_surfaces_syntax(self) -> None:
-        ok = self._doc("DECISION: REJECT\nRISK: low\nSURFACES: ui, api\n\n## Motivo\n\nx\n")
+        ok = self._doc("DECISION: REJECT\nRISK: low\nSURFACES: ui, api\n\n## Reason\n\nx\n")
         self.assertEqual(contracts.surfaces(contracts.read_plan(ok)), ["ui", "api"])
         bad = self._doc("DECISION: REJECT\nRISK: low\nSURFACES: UI & api\n")
         with self.assertRaisesRegex(contracts.ContractError, "plan.md:3: SURFACES"):
             contracts.read_plan(bad)
 
     def test_required_sections_per_decision(self) -> None:
-        p = self._doc("DECISION: NEEDS-INFO\nRISK: low\nSURFACES: none\n\n## Alcance\n\nx\n")
-        with self.assertRaisesRegex(contracts.ContractError, "## Pregunta"):
+        p = self._doc("DECISION: NEEDS-INFO\nRISK: low\nSURFACES: none\n\n## Scope\n\nx\n")
+        with self.assertRaisesRegex(contracts.ContractError, "## Question"):
             contracts.read_plan(p)
         p = self._doc(
-            "DECISION: ACCEPT\nRISK: low\nSURFACES: none\n\n## Alcance\n\nx\n\n"
-            "## Criterios de aceptación\n\nwords only\n\n## Seams\n\nx\n"
+            "DECISION: ACCEPT\nRISK: low\nSURFACES: none\n\n## Scope\n\nx\n\n"
+            "## Acceptance criteria\n\nwords only\n\n## Seams\n\nx\n"
         )
         with self.assertRaisesRegex(contracts.ContractError, "has no criteria"):
             contracts.read_plan(p)
+
+    def test_pre_020_spanish_headings_still_parse(self) -> None:
+        plan = contracts.read_plan(
+            self._doc(
+                "DECISION: ACCEPT\nRISK: low\nSURFACES: none\n\n## Alcance\n\nx\n\n"
+                "## Criterios de aceptación\n\n- C1: y\n\n## Seams\n\nz\n"
+            )
+        )
+        self.assertEqual(plan.section("Scope"), "x")
+        self.assertEqual(contracts.criteria_ids(plan.section("Acceptance criteria")), ["C1"])
+        build = contracts.read_build(
+            self._doc("STATUS: READY\n\n## Evidencia\n\nC1: t.py::test_y\n", "build.md")
+        )
+        self.assertIn("test_y", build.section("Evidence"))
+        review = contracts.read_review(
+            self._doc(
+                "VERDICT: PASS\n\n## Estándares\n\nok\n\n## Spec\n\nok\n\n"
+                "## Arquitectura\n\nok\n\n## Seguridad\n\nok\n",
+                "review.md",
+            ),
+            security=True,
+        )
+        self.assertEqual(review.section("Security"), "ok")
+
+    def test_section_headings_ignore_case(self) -> None:
+        plan = contracts.read_plan(
+            self._doc(
+                "DECISION: ACCEPT\nRISK: low\nSURFACES: none\n\n## scope\n\nx\n\n"
+                "## Acceptance Criteria\n\n- C1: y\n\n## SEAMS\n\nz\n"
+            )
+        )
+        self.assertEqual(plan.section("Seams"), "z")
 
     def test_evidence_lines(self) -> None:
         ev, bad = contracts.parse_evidence(
