@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-# Exit codes (DESIGN.md · bin/job y bin/gate)
+# Exit codes (DESIGN.md · factory-job and factory-gate)
 EXIT_OK = 0
 EXIT_CONDITION = 1  # condition not met / illegal transition / effect failed
 EXIT_USAGE = 2  # usage or configuration error

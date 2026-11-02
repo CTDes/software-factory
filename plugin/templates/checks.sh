@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project checks for the software factory. Contract (plugin DESIGN.md · "Contrato de checks.sh"):
+# Project checks for the software factory. Contract (plugin DESIGN.md · "checks.sh contract"):
 # - non-interactive; installs dependencies on a fresh worktree
 # - runs lint, typecheck, tests and build
 # - never rewrites tracked files (no --fix, no snapshot updates)

@@ -1,4 +1,4 @@
-"""Spec level (DESIGN.md · Máquinas de estados · Spec).
+"""Spec level (DESIGN.md · State machines · Spec).
 
 A spec is a parent issue (labels `spec` + `queue`) whose children are the open issues with a
 `Parent: #<spec>` line. `job spec create` validates the child graph, creates `spec/<id>` from

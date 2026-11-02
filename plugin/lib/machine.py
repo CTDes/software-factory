@@ -1,4 +1,4 @@
-"""Ticket state machine (DESIGN.md · Máquinas de estados · Ticket). The only place transitions live.
+"""Ticket state machine (DESIGN.md · State machines · Ticket). The only place transitions live.
 
 Every transition: check the condition, run GitHub/git effects, and only if all of them
 succeed write the new stage, append to events.log and release the claim. If an effect
@@ -20,7 +20,7 @@ from lib.github import GitHub
 from lib.jobs import TERMINAL, Job, all_jobs, by_issue
 from lib.util import CommandError, FactoryError, atomic_write, is_after, now
 
-# (from, to). Anything else is rejected. Additions to the DESIGN table are marked (+).
+# (from, to). Anything else is rejected. (+) marks transitions added during implementation (DESIGN.md · History).
 LEGAL: frozenset[tuple[str, str]] = frozenset(
     {
         ("intake", "build"),
@@ -48,7 +48,7 @@ LEGAL: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-# Spec jobs (DESIGN.md · Máquinas de estados · Spec).
+# Spec jobs (DESIGN.md · State machines · Spec).
 SPEC_LEGAL: frozenset[tuple[str, str]] = frozenset(
     {
         ("building", "final-review"),

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project-specific checks. Contract (see factory/DESIGN.md · "Contrato de checks.sh"):
+# Project-specific checks. Contract (see plugin/DESIGN.md · "checks.sh contract"):
 # non-interactive, installs deps on a fresh worktree, runs lint + typecheck + tests + build,
 # never rewrites tracked files, exits non-zero on any failure.
 #

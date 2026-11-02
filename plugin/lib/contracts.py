@@ -1,4 +1,4 @@
-"""File contracts between agents and bin/job (DESIGN.md · Contratos de ficheros).
+"""File contracts between agents and bin/job (DESIGN.md · File contracts).
 
 Every agent file starts at line 1 with `KEY: value` lines. The header ends at the first
 line that is not a header line. Parsing is strict: a missing, duplicated, unknown or

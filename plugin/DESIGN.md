@@ -1,88 +1,98 @@
-# Software Factory · Encargo para Claude Code
+# Software factory · Design
 
-Nov 1, 2026 · @Xals
+This is the reference design of the `software-factory` Claude Code plugin as it is implemented
+today. The factory turns GitHub issues, and approved specs with their ticket graph, into merged
+code through three agents and two deterministic scripts.
 
-Este documento es el encargo completo para que Claude Code construya una software factory: un sistema que convierte issues de GitHub o specs de un proyecto en código mergeado mediante tres agentes y dos scripts deterministas. Se implementa en seis fases, una por sesión, cada una verificable antes de empezar la siguiente.
+It started as a brief written in Spanish for Claude Code to build, in six phases. The brief is
+archived unchanged in [`docs/original-brief.es.md`](docs/original-brief.es.md). What changed
+along the way is recorded in [History](#history).
 
-> **Estado (2026-11-02):** las seis fases están implementadas y verificadas. La fábrica se distribuye como el plugin `software-factory` (marketplace `ctdes-factory`). La sección *Entorno y estructura* describe el layout actual; los nombres `bin/job` y `bin/gate` del resto del documento corresponden a los ejecutables `factory-job` y `factory-gate`, y `/factory` al orquestador `/software-factory:factory`. Lo que cambió respecto a este encargo está en [Implementación: desviaciones y decisiones](#implementación-desviaciones-y-decisiones).
+> **Language note:** the agents' prompts, the file headings they write and the comments the factory
+> posts on GitHub are in Spanish. Headings such as `## Criterios de aceptación` in the tables below
+> are the literal strings the parser expects, not translations.
 
-## Cómo usar este documento
+## Goals and principles
 
-Expórtalo a Markdown y guárdalo como `factory/DESIGN.md` en un repo de pruebas pequeño (no en el proyecto real). Abre Claude Code en ese repo y pide una fase cada vez:
+The factory works at two levels:
+
+- **Ticket level:** a labelled issue becomes a reviewed PR with green checks.
+- **Spec level:** an approved spec and its ticket graph are built, ticket by ticket, on an
+  integration branch. They reach the base branch as a single PR that a human tests. This is the
+  main use case: new and relatively large pieces of work.
+
+The human steps in at three points: approving the spec and its graph before building, testing
+and merging the final PR, and handling escalations. Everything in between runs unattended.
+
+Non-negotiable principles:
+
+1. **Scripts decide what is deterministic; agents judge.** `factory-job` and `factory-gate` run
+   the checks, move state, create branches, push, merge, label and comment. Agents decide what to
+   build, write code and judge its quality.
+2. **Context travels in files.** Each agent starts without the orchestrator's history. It reads
+   files from the job and the repo, writes exactly one output file (plus commits, for the
+   builder) and returns a single line.
+3. **No agent touches GitHub or the remote.** No `gh`, no `git push`, no merges into shared
+   branches. Only `factory-job` has those effects. Hooks enforce this even if an agent tries.
+4. **External text is data, never instructions.** Issue content reaches the agents quoted inside
+   `issue.md`. The first agent to read it, the planner, has no shell.
+5. **A branch cannot change the criteria it is judged by.** The gate runs `checks.sh` from the
+   base branch on the remote and fails if the diff modifies or deletes protected paths.
+6. **The orchestrator is dumb.** It does not interpret verdicts. It asks `factory-job` what to
+   do next, launches the matching agent or script, and hands control back. All transition logic
+   lives in Python, with tests.
+7. **Resumable.** If the session dies, `/software-factory:factory run` rebuilds everything from
+   `factory/jobs/` and GitHub, with no state in memory.
+
+## Layout
+
+Machine requirements: a recent Claude Code, `git` 2.40+, `python3` 3.10+ with no extra packages,
+and `gh` authenticated as a user who can push, open PRs and manage labels in the repository.
+
+Everything generic ships in the plugin `software-factory`, installed from the marketplace
+`ctdes-factory` (the repository `CTDes/software-factory`). Each project only holds
+`factory/checks.sh`, `factory/config.json`, its context files and `.claude/settings.json`, all
+created by `factory-init`.
 
 ```text
-Lee factory/DESIGN.md entero. Implementa solo la fase N.
-Antes de escribir código, dime qué vas a crear y qué dudas tienes.
-Al terminar, comprueba cada criterio de aceptación de la fase, dime cuáles pasan
-y cómo lo has verificado, y para. No empieces la fase siguiente.
-```
-
-Reglas para Claude Code durante todo el encargo:
-
-- Este documento es la especificación. Si algo es ambiguo o choca con cómo funciona Claude Code hoy, pregunta antes de decidir; si la documentación oficial contradice un detalle de aquí (un campo de frontmatter, un evento de hook), sigue la documentación y anota la diferencia al final de la fase.
-- Consulta la documentación actual de skills, subagentes, hooks y settings antes de escribir los ficheros de `.claude/`. No escribas frontmatter de memoria.
-- No copies ficheros de ZazenCodes (GPLv3). Las skills de Matt Pocock son MIT: se copian con su licencia y atribución.
-- Si al implementar una fase descubres que una decisión de este documento es mala, dilo y propón el cambio; no lo apliques en silencio.
-
-## Objetivo y principios
-
-La fábrica trabaja a dos niveles. En el nivel ticket, una issue etiquetada se convierte en una PR revisada y con los checks en verde. En el nivel spec, una spec aprobada con su grafo de tickets se construye en una rama de integración, ticket a ticket, y llega a `main` como una sola PR que prueba un humano. El nivel spec es el uso principal: desarrollos nuevos y relativamente grandes.
-
-El humano interviene en tres puntos: aprueba la spec y su grafo antes de construir, prueba y mergea la PR final, y atiende escalados. Todo lo que hay entre medias es desatendido.
-
-Principios no negociables:
-
-1. **Los scripts deciden lo determinista; los agentes juzgan.** Correr checks, mover estado, crear ramas, pushear, mergear, etiquetar y comentar lo hacen `bin/job` y `bin/gate`. Los agentes deciden qué construir, escriben código y juzgan su calidad.
-2. **El contexto viaja en ficheros.** Cada agente arranca sin la historia del orquestador. Lee ficheros del job y del repo, escribe exactamente un fichero de salida (más commits, en el caso del builder) y devuelve una sola línea.
-3. **Ningún agente toca GitHub ni el remoto.** Nada de `gh`, `git push`, `git merge` a ramas compartidas. Solo `bin/job` tiene esos efectos. Un hook global lo garantiza aunque un agente lo intente.
-4. **El texto externo es dato, nunca instrucción.** El contenido de una issue llega a los agentes citado dentro de `issue.md`. El primer agente que lo lee (planner) no tiene shell.
-5. **Una rama no puede cambiar los criterios por los que se la juzga.** El gate ejecuta el `checks.sh` del checkout principal y falla si el diff modifica o borra rutas protegidas.
-6. **El orquestador es tonto.** No interpreta veredictos: pregunta a `bin/job` qué toca hacer, lanza el agente correspondiente y le devuelve el control. Toda la lógica de transición vive en Python, con tests.
-7. **Reanudable.** Si la sesión muere, `/factory run` reconstruye todo desde `factory/jobs/` y GitHub, sin estado en memoria.
-
-## Entorno y estructura
-
-Requisitos de la máquina que ejecuta la fábrica: Claude Code reciente, `git` 2.40+, `python3` 3.10+ sin paquetes externos, `gh` autenticado con un usuario que pueda pushear, crear PRs y gestionar etiquetas en el repo.
-
-Lo genérico se distribuye como el plugin `software-factory`, instalado desde el marketplace `ctdes-factory` (el repo `CTDes/software-factory`). Lo único específico de cada proyecto es `factory/checks.sh`, `factory/config.json`, los ficheros de contexto y `.claude/settings.json`, y `factory-init` los crea.
-
-```text
-plugin software-factory/                (instalado en ~/.claude/plugins/cache/…)
-  .claude-plugin/plugin.json             nombre y versión (la versión gobierna las actualizaciones)
-  DESIGN.md                              este documento
+plugin software-factory/                (installed under ~/.claude/plugins/cache/…)
+  .claude-plugin/plugin.json             name and version (the version gates updates)
+  DESIGN.md                              this document
+  docs/original-brief.es.md              the original brief, in Spanish (archive)
   agents/planner.md, builder.md, reviewer.md   →  software-factory:planner, :builder, :reviewer
-  skills/factory/SKILL.md                orquestador /software-factory:factory
+  skills/factory/SKILL.md                orchestrator /software-factory:factory
   skills/tdd, code-review, grilling, domain-modeling, to-spec, to-tickets, retro   (Matt Pocock, MIT)
-  hooks/hooks.json, agent_guard.py       guardarraíles de los agentes (PreToolUse, por agent_type)
-  bin/factory-job                        máquina de estados; único con efectos en git remoto y GitHub
-  bin/factory-gate                       ejecuta checks.sh y comprueba rutas protegidas y evidencia
-  bin/factory-init                       prepara un repo, nuevo o existente (ficheros, settings, etiquetas)
-  lib/                                   módulos Python compartidos
-  tests/                                 tests (unittest, sin red, GitHub fake)
-  templates/                             lo que escribe factory-init
+  hooks/hooks.json, agent_guard.py       agent guardrails (PreToolUse, by agent_type)
+  bin/factory-job                        state machine; the only thing with effects on the remote and GitHub
+  bin/factory-gate                       runs checks.sh, checks protected paths and evidence
+  bin/factory-init                       prepares a repository, new or existing
+  lib/                                   shared Python modules
+  tests/                                 unittest, no network, fake GitHub
+  templates/                             what factory-init writes
 
 <repo>/
-  CLAUDE.md                              contexto del repo: setup, cómo se valida, convenciones
-  GLOSSARY.md                            vocabulario del dominio
-  docs/adr/NNNN-*.md                     decisiones de arquitectura
-  docs/architecture.md                   mapa de módulos, interfaces, dependencias permitidas, propiedad de carpetas
-  .worktreeinclude                       ficheros no versionados que cada worktree necesita (.env…)
-  .gitignore                             añade factory/jobs/ y .claude/worktrees/
-  .github/workflows/checks.yml           ejecuta factory/checks.sh; check requerido en main
-  .claude/settings.json                  permisos pre-aprobados, marketplace y plugin activado
+  CLAUDE.md                              repo context: setup, how to validate, conventions
+  GLOSSARY.md                            domain vocabulary
+  docs/adr/NNNN-*.md                     architecture decisions
+  docs/architecture.md                   module map, interfaces, allowed dependencies, folder ownership
+  .worktreeinclude                       untracked files every worktree needs (.env…)
+  .gitignore                             adds factory/jobs/ and .claude/worktrees/
+  .github/workflows/checks.yml           runs factory/checks.sh; required check on the base branch
+  .claude/settings.json                  pre-approved permissions, marketplace, plugin enabled
   factory/
-    checks.sh                            ESPECÍFICO · lint, typecheck, tests, build
-    config.json                          ESPECÍFICO · ver sección config.json
-    jobs/<job-id>/                       estado de cada job (gitignored)
+    checks.sh                            PROJECT-SPECIFIC · lint, typecheck, tests, build
+    config.json                          PROJECT-SPECIFIC · see config.json
+    jobs/<job-id>/                       state of each job (gitignored)
 
-~/.claude/settings.json                  hook global de guardarraíles git (fuera del repo)
+~/.claude/settings.json                  global git guardrails hook (outside the repo)
 ```
 
-Los worktrees viven en `.claude/worktrees/<job-id>/`, un directorio por job, en la rama `factory/<job-id>`.
+Worktrees live in `.claude/worktrees/<job-id>/`, one per job, on the branch `factory/<job-id>`.
 
 ## config.json
 
-Un único fichero por repo con todo lo que se ajusta sin tocar código. `bin/job` lo valida al arrancar y se niega a trabajar si falta una clave o tiene un tipo incorrecto.
+One file per repository with everything that can be tuned without touching code. `factory-job`
+validates it on start and refuses to work if a key is missing or has the wrong type.
 
 ```json
 {
@@ -113,339 +123,465 @@ Un único fichero por repo con todo lo que se ajusta sin tocar código. `bin/job
 }
 ```
 
-| Clave | Significado |
+| Key | Meaning |
 | --- | --- |
-| `merge_method` | `merge`, `squash` o `rebase`; debe estar permitido en el repo |
-| `concurrency` | Agentes trabajando a la vez. Empieza en 1; sube a 3 o 4 en el nivel spec cuando la fábrica sea fiable |
-| `max_rounds` | Vueltas al builder (gate en rojo o review con cambios) antes de escalar al humano |
-| `labels.queue` | Etiqueta que hace que una issue entre en la fábrica. Es la frontera de confianza: solo quien tiene permiso de triage puede ponerla |
-| `labels.in_progress` | La pone `job` mientras un job está vivo, para ver en GitHub qué tiene cogido la fábrica |
-| `models` | Modelo por agente y, para builder y reviewer, por riesgo |
-| `always_human_surfaces` | Superficies que nunca se mergean solas a la rama de la spec, aunque todo pase (por ejemplo `gameplay`, `payments`) |
-| `protected_paths` | Globs. El gate falla si el diff modifica o borra un fichero que encaje. Añadir ficheros nuevos que encajen está permitido. El proyecto añade aquí sus tests existentes |
+| `merge_method` | `merge`, `squash` or `rebase`; must be allowed in the repository |
+| `concurrency` | Actions running at once. Start at 1; raise to 3 or 4 at spec level once the factory is reliable |
+| `max_rounds` | Trips back to the builder (red gate, review with changes, failed merge) before escalating to a human |
+| `labels.queue` | The label that lets an issue into the factory. It is the trust boundary: only people with triage rights can add it |
+| `labels.in_progress` | Set by `factory-job` while a job is alive, so GitHub shows what the factory has picked up |
+| `models` | Model per agent and, for builder and reviewer, per risk |
+| `always_human_surfaces` | Surfaces that never merge into the spec branch on their own, even when everything passes (e.g. `payments`) |
+| `protected_paths` | Globs. The gate fails if the diff modifies or deletes a matching file. Adding new matching files is allowed. Projects add their existing tests here |
 
-## Estado del job
+## Jobs
 
-Hay dos tipos de job. Un **ticket** es una issue que se construye en su propio worktree. Una **spec** es una issue padre que agrupa tickets y posee una rama de integración. El id es `NNN-slug`: número de la issue con tres cifras y el título en kebab-case recortado a 40 caracteres.
+There are two kinds of job. A **ticket** is an issue built in its own worktree. A **spec** is a
+parent issue that groups tickets and owns an integration branch. The id is `NNN-slug`: the issue
+number with three digits and the title in kebab-case, cut to 40 characters.
 
 ```text
 factory/jobs/012-reading-time/
-  job.json             estado; solo lo escribe bin/job
-  issue.md             la issue y sus comentarios, citados como dato
+  job.json             state; only factory-job writes it
+  issue.md             the issue and its comments, quoted as data
   plan.md              planner
-  build.md             builder (se sobrescribe en cada ronda)
-  round-1/checks.md    bin/gate
+  build.md             builder (current round; earlier ones are archived in their round folder)
+  round-1/checks.md    factory-gate
   round-1/review.md    reviewer
+  round-1/merge.md     factory-job merge, when integrating the base failed
+  round-1/build.md     the builder's build.md for that round, archived
   round-2/…
-  rework-1.md          comentarios humanos traídos de la PR
-  events.log           una línea por transición: fecha, de, a, motivo
+  rework-1.md          human comments pulled from the PR or issue
+  events.log           one line per transition: time, from, to, reason
 ```
 
 ### job.json
 
 ```json
 {
-  "id": "012-reading-time",
+  "id": "014-text-stats",
   "kind": "ticket",
-  "issue": 12,
-  "title": "Tiempo de lectura en los posts",
-  "spec": "010-blog-v2",
-  "blocked_by": [11],
+  "issue": 14,
+  "title": "Text metrics in a dict (text_stats)",
+  "spec": "010-text-statistics",
+  "blocked_by": [11, 12],
   "stage": "build",
   "round": 1,
   "risk": "medium",
-  "surfaces": ["ui"],
+  "surfaces": ["api", "docs"],
   "models": { "builder": "sonnet", "reviewer": "sonnet" },
-  "base": "spec/010-blog-v2",
-  "branch": "factory/012-reading-time",
-  "worktree": ".claude/worktrees/012-reading-time",
+  "base": "spec/010-text-statistics",
+  "branch": "factory/014-text-stats",
+  "worktree": ".claude/worktrees/014-text-stats",
   "pr": null,
-  "agent": "builder-012-reading-time",
+  "agent": null,
   "reason": null,
-  "updated_at": "2026-11-01T11:20:00+01:00"
+  "claim": null,
+  "feedback": "factory/jobs/014-text-stats/round-1/merge.md",
+  "contract_failures": 0,
+  "created_at": "2026-11-02T11:58:35+01:00",
+  "pushed_at": null,
+  "asked_at": null,
+  "updated_at": "2026-11-02T12:15:23+01:00"
 }
 ```
 
-Un ticket sin `spec` tiene `base` = `base_branch` y termina en una PR a `main`. Un job de tipo `spec` tiene además `tickets` (lista de ids) y `branch` = `spec/<id>`; no tiene worktree propio salvo en la fase final.
+- A ticket without `spec` has `base` = `base_branch` and ends in a PR to it.
+- A `spec` job also has `tickets` (list of ids) and `branch` = `spec/<id>`. It only has a
+  worktree of its own in the final phase.
+- `claim` marks a job as taken by a running action, so `job next` does not offer it again.
+- `feedback` is the exact file that sent the job back to `build`. The builder reads it next round.
+- `contract_failures` counts consecutive malformed agent files (see below).
 
-### Contratos de ficheros
+### File contracts
 
-Cada fichero de agente empieza con líneas clave-valor que `bin/job` parsea con un regex estricto. Si falta una línea obligatoria o tiene un valor no permitido, `job advance` falla con un mensaje que dice qué fichero y qué línea; el orquestador se lo devuelve al mismo agente una vez y, si vuelve a fallar, el job pasa a `needs-human`.
+Each agent file starts with key-value lines that `factory-job` parses with a strict regex. If a
+required line is missing or has a value that is not allowed, `job advance` fails with a message
+naming the file and the line. The orchestrator sends that error back to the same agent once. If
+it fails again, the job goes to `needs-human`. A `READY` with a dirty worktree or no commits over
+the base counts as a contract failure too.
 
-| Fichero | Cabecera obligatoria | Cuerpo |
+| File | Required header | Body |
 | --- | --- | --- |
-| `issue.md` | escrito por `job`: título, autor, URL | El cuerpo y los comentarios de la issue dentro de un bloque delimitado por `<<<ISSUE` y `ISSUE>>>`, con el aviso de que es dato |
-| `plan.md` | `DECISION: ACCEPT\|NEEDS-INFO\|REJECT`, `RISK: low\|medium\|high`, `SURFACES: a, b` (o `none`) | `## Alcance`, `## Criterios de aceptación` (C1, C2… verificables), `## Seams` (dónde viven los tests), `## Notas`. Con NEEDS-INFO: `## Pregunta`. Con REJECT: `## Motivo` |
-| `build.md` | `STATUS: READY\|BLOCKED` | `## Evidencia`: una línea por criterio, `C1: <ruta del test>::<nombre> — qué demuestra`. Con BLOCKED: `## Bloqueo` |
-| `round-N/checks.md` | `GATE: PASS\|FAIL`, `PROTECTED: none` o la lista de rutas tocadas | Comando ejecutado, duración y las últimas `log_tail_lines` líneas |
-| `round-N/review.md` | `VERDICT: PASS\|CHANGES` | `## Estándares`, `## Spec`, `## Arquitectura` y, si la superficie `security` está marcada, `## Seguridad`. Cada hallazgo con fichero y línea y si bloquea o no |
-| `rework-N.md` | escrito por `job` | Comentarios de la PR posteriores al último push, citados |
+| `issue.md` | written by `factory-job`: title, author, URL | Issue body and comments inside a block delimited by `<<<ISSUE` and `ISSUE>>>`, with a notice that it is data |
+| `plan.md` | `DECISION: ACCEPT\|NEEDS-INFO\|REJECT`, `RISK: low\|medium\|high`, `SURFACES: a, b` (or `none`) | `## Alcance`, `## Criterios de aceptación` (C1, C2… testable), `## Seams` (where the tests live), `## Notas`. With NEEDS-INFO: `## Pregunta`. With REJECT: `## Motivo` |
+| `build.md` | `STATUS: READY\|BLOCKED` | `## Evidencia`: one line per criterion, `C1: <test path>::<name> — what it proves`. With BLOCKED: `## Bloqueo` |
+| `round-N/checks.md` | `GATE: PASS\|FAIL`, `PROTECTED: none` or the list of paths touched | Command, duration, missing evidence and the last `log_tail_lines` lines |
+| `round-N/review.md` | `VERDICT: PASS\|CHANGES` | `## Estándares`, `## Spec`, `## Arquitectura` and, when the `security` surface is set, `## Seguridad`. Each finding with file, line and whether it blocks |
+| `round-N/merge.md` | `MERGE: CONFLICT\|GATE-FAIL`, written by `factory-job merge` | Conflicting files or the gate log after integrating the base |
+| `rework-N.md` | written by `factory-job` | PR and issue comments newer than the last push, quoted |
 
-Los agentes devuelven al orquestador una sola línea: la cabecera principal de su fichero (`ACCEPT risk=medium surfaces=ui`, `READY`, `CHANGES`…). El orquestador no la interpreta; la usa solo para informar.
+Agents return a single line to the orchestrator: the main header of their file
+(`ACCEPT risk=medium surfaces=ui`, `READY`, `CHANGES`…). The orchestrator only prints it.
 
-## Máquinas de estados
+## State machines
 
-`bin/job` es la única implementación de estas tablas. Cualquier transición no listada se rechaza. Cada transición escribe una línea en `events.log` y actualiza `updated_at`. Los efectos en GitHub se hacen después de comprobar la condición y antes de escribir el nuevo `stage`; si un efecto falla, el job no cambia de estado y el error se muestra entero.
+`factory-job` is the only implementation of these tables (`lib/machine.py`, `lib/spec.py`). Any
+transition not listed is rejected. Each transition appends a line to `events.log` and updates
+`updated_at`. GitHub and git effects run after the condition is checked and before the new
+`stage` is written. If an effect fails, the job keeps its stage and the full error is shown.
 
 ### Ticket
 
-Estados: `intake`, `needs-info`, `rejected`, `build`, `gate`, `review`, `merging`, `ready`, `needs-human`, `done`. Terminales: `rejected`, `done`.
+States: `intake`, `needs-info`, `rejected`, `build`, `gate`, `review`, `merging`, `ready`,
+`needs-human`, `done`. Terminal: `rejected`, `done`.
 
-| De | A | Condición | Efectos |
+| From | To | Condition | Effects |
 | --- | --- | --- | --- |
-| `intake` | `build` | `plan.md` con `DECISION: ACCEPT` | Guarda risk, surfaces y modelos. Etiqueta `in_progress`. Comenta en la issue el alcance y los criterios |
-| `intake` | `needs-info` | `NEEDS-INFO` | Comenta la pregunta en la issue. Etiqueta `needs_info` |
-| `intake` | `rejected` | `REJECT` | Comenta el motivo. Quita `queue` |
-| `needs-info` | `intake` | Comentario nuevo de alguien distinto de la fábrica, posterior a la pregunta | Regenera `issue.md`. Quita `needs_info` |
-| `build` | `gate` | `build.md` con `READY`, árbol limpio y al menos un commit sobre la base | `round += 1`, crea `round-N/`. Push de la rama con `--force-with-lease`. Ticket sin spec: abre draft PR "Closes #n" la primera vez |
-| `build` | `needs-human` | `BLOCKED` | Comenta el bloqueo en la issue (y en la PR si existe). Etiqueta `needs_human` |
-| `gate` | `review` | `round-N/checks.md` con `GATE: PASS` | Ninguno |
-| `gate` | `build` | `GATE: FAIL` y `round < max_rounds` | Ninguno (el builder lee el log) |
-| `gate` | `needs-human` | `GATE: FAIL` y `round = max_rounds` | Comenta. Etiqueta `needs_human` |
-| `review` | `build` | `VERDICT: CHANGES` y `round < max_rounds` | Ninguno |
-| `review` | `needs-human` | `CHANGES` y `round = max_rounds` | Comenta. Etiqueta `needs_human` |
-| `review` | `merging` | `PASS`, ticket de una spec, sin superficies de `always_human_surfaces` | Ninguno |
-| `review` | `ready` | `PASS` y ticket sin spec, o con una superficie de `always_human_surfaces` | Sin spec: PR sale de draft. Con spec: abre PR contra la rama de la spec. Etiqueta `needs_human`, comenta un resumen |
-| `merging` | `done` | `job merge` correcto (ver bin/job) | Push fast-forward de la rama del ticket a la rama de la spec. Cierra la issue con comentario. Borra worktree y rama remota. Quita etiquetas |
-| `merging` | `build` | Conflicto al integrar la base, o gate en rojo tras integrarla | Escribe `round-N/merge.md` con los ficheros en conflicto o el log. `round += 1`; si supera `max_rounds`, a `needs-human` |
-| `ready`, `needs-human` | `build` | `job rework` | Trae comentarios de la PR o de la issue a `rework-N.md`. Quita `needs_human` |
-| `ready`, `needs-human` | `done` | La PR del job está mergeada | Borra worktree. Quita etiquetas |
+| `intake` | `build` | `plan.md` with `DECISION: ACCEPT` | Stores risk, surfaces and models. Adds `in_progress`. Comments the scope and criteria on the issue |
+| `intake` | `needs-info` | `NEEDS-INFO` | Comments the question on the issue. Adds `needs_info` |
+| `intake` | `rejected` | `REJECT` | Comments the reason. Removes `queue`. Deletes the worktree and branch |
+| `intake` | `needs-human` | The planner broke the `plan.md` contract twice | Comments. Adds `needs_human` |
+| `needs-info` | `intake` | A new comment from someone other than the factory, after the question | Regenerates `issue.md`. Removes `needs_info` |
+| `build` | `gate` | `build.md` with `READY`, clean tree and at least one commit over the base | `round += 1`, creates `round-N/`. Pushes the branch with `--force-with-lease`. Standalone ticket: opens a draft PR "Closes #n" the first time |
+| `build` | `needs-human` | `BLOCKED`, or the contract broken twice | Comments the blocker on the issue (and the PR if any). Adds `needs_human` |
+| `gate` | `review` | `round-N/checks.md` with `GATE: PASS` | None |
+| `gate` | `build` | `GATE: FAIL` and `round < max_rounds` | Archives `build.md`, sets `feedback` |
+| `gate` | `needs-human` | `GATE: FAIL` and `round = max_rounds` | Comments. Adds `needs_human` |
+| `review` | `build` | `VERDICT: CHANGES` and `round < max_rounds` | Archives `build.md`, sets `feedback` |
+| `review` | `needs-human` | `CHANGES` and `round = max_rounds`, or the contract broken twice | Comments. Adds `needs_human` |
+| `review` | `merging` | `PASS`, ticket of a spec, no surface in `always_human_surfaces` | None |
+| `review` | `ready` | `PASS` and standalone ticket, or a surface in `always_human_surfaces` | Standalone: PR leaves draft. In a spec: opens a PR against the spec branch. Adds `needs_human`, comments a summary |
+| `merging` | `done` | `job merge` succeeds | Fast-forward push of the ticket branch into the spec branch. Comments and closes the issue. Deletes worktree, local and remote branch. Removes labels |
+| `merging` | `build` | Conflict integrating the base, or red gate after integrating it, and rounds left | Writes `round-N/merge.md`, sets `feedback`. `round` is not incremented here: `build → gate` does it |
+| `merging` | `needs-human` | Same, with no rounds left | Comments. Adds `needs_human` |
+| `ready`, `needs-human` | `build` | `job rework` | Pulls PR and issue comments into `rework-N.md`, sets `feedback`. Removes `needs_human` |
+| `needs-human` | `intake` | `job rework` of a job escalated before it had a valid plan | Same as above, back to the planner |
+| `ready`, `needs-human` | `done` | The job's PR is merged | Deletes worktree, local and remote branch. Removes labels |
 
-El builder se reanuda en cada vuelta a `build`. Lee, en este orden de prioridad, el último `rework-N.md`, el último `round-N/merge.md`, el último `round-N/checks.md` si es FAIL y el último `round-N/review.md` si es CHANGES.
+If a merge push is rejected because the spec branch moved meanwhile, the job stays in `merging`
+with its claim released, and the next `job next` retries the merge.
+
+The builder is resumed on every trip back to `build`. It reads the file in `feedback`
+(`rework-N.md`, `round-N/merge.md`, `round-N/checks.md` or `round-N/review.md`). The previous
+`build.md` has been archived to its round folder.
 
 ### Spec
 
-Estados: `building`, `final-review`, `final-build`, `ready`, `needs-human`, `done`.
+States: `building`, `final-review`, `final-build`, `ready`, `needs-human`, `done`.
 
-| De | A | Condición | Efectos |
+| From | To | Condition | Effects |
 | --- | --- | --- | --- |
-| (nuevo) | `building` | `job spec create <n>`: la issue tiene `spec` y `queue`, sus tickets hijos forman un grafo válido | Crea `spec/<id>` desde `origin/main` y la pushea. Crea un job ticket en `intake` por cada hijo. Comenta el grafo en la issue de la spec |
-| `building` | `final-review` | Todos los tickets en `done` | Crea worktree de la rama de la spec. `round = 1` |
-| `final-review` | `ready` | Gate final PASS y review final PASS | Abre PR `spec/<id>` → `main` "Closes #n", no draft. Etiqueta `needs_human`. Comenta un resumen: tickets, rondas, escalados |
-| `final-review` | `final-build` | Gate o review final con cambios y `round < max_rounds` | Ninguno |
-| `final-build` | `final-review` | `build.md` con `READY` | Push de la rama de la spec. `round += 1` |
-| `final-review`, `final-build` | `needs-human` | Rondas agotadas o `BLOCKED` | Comenta. Etiqueta `needs_human` |
-| `ready`, `needs-human` | `final-build` | `job rework` | Igual que en ticket |
-| `ready` | `done` | PR mergeada | Borra worktree y rama remota de la spec |
+| (new) | `building` | `job spec create <n>`: the issue has `spec` and `queue`, its children form a valid graph | Creates `spec/<id>` from `origin/<base_branch>` and pushes it. Creates a ticket job in `intake` per child. Comments the graph on the spec issue |
+| `building` | `final-review` | Every ticket is `done` | Creates the spec branch worktree. `round = 1` |
+| `final-review` | `ready` | Final gate PASS and final review PASS | Opens PR `spec/<id>` → base "Closes #n", not draft. Adds `needs_human`. Comments a summary: tickets, rounds, escalations |
+| `final-review` | `final-build` | Final gate or final review with changes and `round < max_rounds` | Archives `build.md`, sets `feedback` |
+| `final-build` | `final-review` | `build.md` with `READY` | Pushes the spec branch. `round += 1` |
+| `final-review`, `final-build` | `needs-human` | Rounds exhausted or `BLOCKED` | Comments. Adds `needs_human` |
+| `ready`, `needs-human` | `final-build` | `job rework` | Same as for tickets |
+| `ready` | `done` | PR merged | Deletes the worktree and the remote spec branch |
 
-Reglas del grafo: los hijos de una spec son las issues abiertas con una línea `Parent: #<spec>`; sus bloqueos, una línea `Blocked by: #a, #b`. `job spec create` falla si hay ciclos, si un bloqueo apunta fuera de la spec o si un hijo no tiene la etiqueta `queue`. Un ticket en `needs-human` no para la spec: solo deja sin programar a los que dependen de él. Un hijo nuevo añadido con la spec en `building` se incorpora en el siguiente `job queue`.
+`final-review` runs in two steps: the `final-gate` action (`factory-gate <id> --final`), then
+`job advance`, which answers `final review pending` without a transition; then the `final-review`
+action (the reviewer agent with `final_reviewer` as model), then `job advance` again.
 
-## bin/job y bin/gate
+Graph rules:
+- A spec's children are the open issues with a line `Parent: #<spec>`. Their blockers come from a
+  line `Blocked by: #a, #b`.
+- `job spec create` fails on cycles, on a blocker outside the spec, or on a child without the
+  `queue` label.
+- A ticket in `needs-human` does not stop the spec: it only holds back the tickets that depend on it.
+- A child added while the spec is `building` joins on the next `job queue`.
+- Merges into the same base branch run one at a time.
 
-Dos ejecutables Python 3.10+ sin dependencias externas, con la lógica en `factory/lib/` y tests en `factory/tests/`. Todo acceso a GitHub pasa por un adaptador (`lib/github.py`) que llama a `gh`; con `FACTORY_GH=fake` lee y escribe un directorio de fixtures JSON, para que los tests corran sin red. Todo acceso a git pasa por `lib/git.py`. Códigos de salida: 0 correcto, 1 condición no cumplida o transición ilegal, 2 error de uso o de configuración.
+## factory-job and factory-gate
 
-### bin/job
+Two Python 3.10+ executables with no external dependencies. The logic is in `lib/`, the tests in
+`tests/`. All GitHub access goes through an adapter (`lib/github.py`) that calls `gh`; with
+`FACTORY_GH=fake` and `FACTORY_GH_DIR=<dir>` it reads and writes JSON fixtures instead, so tests
+run without network. All git access goes through `lib/git.py`. Exit codes: 0 success, 1
+condition not met or illegal transition, 2 usage or configuration error.
 
-| Comando | Qué hace |
+### factory-job
+
+| Command | What it does |
 | --- | --- |
-| `job queue` | Sincroniza con GitHub. Crea jobs para issues nuevas con `queue` (las que tienen `spec` como spec, las que tienen `Parent:` como hijos de su spec, el resto como tickets sueltos). Detecta respuestas a `needs-info`, PRs mergeadas e hijos nuevos. Imprime un resumen |
-| `job create <issue>` | Crea un job ticket en `intake` y escribe `issue.md` |
-| `job spec create <issue>` | Crea el job spec, valida el grafo y crea los jobs de sus hijos |
-| `job next [--json]` | Lista las acciones que se pueden ejecutar ya, respetando `concurrency`, bloqueos y jobs reclamados. Cada acción incluye job, tipo (`plan`, `build`, `gate`, `review`, `merge`, `final-gate`, `final-review`, `final-build`), agente, modelo, nombre del agente y el prompt exacto que hay que darle |
-| `job start <id>` | Marca el job como reclamado (fecha y acción). `job next` no vuelve a ofrecerlo. En la acción `plan` de un ticket, además: `git fetch` y crea el worktree desde `origin/<base>` en `factory/<id>`, copiando lo que diga `.worktreeinclude`. Así el planner lee el código de la base tal como está cuando el ticket se desbloquea |
-| `job advance <id>` | Lee los ficheros del job, decide la transición según las tablas, ejecuta sus efectos, escribe el nuevo estado y libera la reclamación. Imprime `<id> <de> -> <a>` |
-| `job merge <id>` | Para tickets en `merging`: fetch, integra `origin/<base>` en la rama del ticket dentro de su worktree, ejecuta `gate`, y si todo pasa hace push fast-forward a la rama de la spec y avanza a `done`. Si no, avanza a `build` con `merge.md` |
-| `job rework <id\|issue>` | Trae comentarios humanos posteriores al último push a `rework-N.md` y avanza a `build` o `final-build` |
-| `job recover` | Libera reclamaciones (las deja una sesión muerta), comprueba que cada worktree existe y que cada rama coincide con `job.json`. Lo ejecuta `/factory run` al empezar |
-| `job status [<id>]` | Estado legible de uno o de todos los jobs |
-| `job summary` | Tabla: job, tipo, stage, ronda, riesgo, PR, motivo |
+| `queue` | Syncs with GitHub. Creates jobs for new issues with `queue`: `spec` ones as specs, ones with `Parent:` as children of their spec, the rest as standalone tickets. Detects answers to `needs-info`, merged PRs and new children. Prints a summary |
+| `create <issue>` | Creates a ticket job in `intake` and writes `issue.md`. The issue must carry `queue` |
+| `spec create <issue>` | Creates the spec job, validates the graph and creates its children's jobs |
+| `next [--json] [--only <id\|issue>]` | Lists the actions that can run now, respecting `concurrency`, blockers, claims and one merge per base. Each action carries the job, kind (`plan`, `build`, `gate`, `review`, `merge`, `final-gate`, `final-review`, `final-build`), agent or command, model, name and the exact prompt. `--only` limits it to one job (a spec includes its tickets) |
+| `start <id>` | Claims the job. For a ticket's `plan` action it also fetches and creates the worktree from `origin/<base>` on `factory/<id>`, copying `.worktreeinclude`, so the planner reads the base as it is when the ticket unblocks |
+| `advance <id>` | Reads the job's files, picks the transition from the tables, runs its effects, writes the new state and releases the claim. Prints `<id> <from> -> <to>` |
+| `merge <id>` | For tickets in `merging`: fetch, integrate `origin/<base>` into the ticket branch inside its worktree, run the gate, and if everything passes fast-forward the spec branch and advance to `done`. Otherwise advance to `build` with `merge.md` |
+| `rework <id\|issue>` | Pulls human comments newer than the last push into `rework-N.md` and advances to `build`, `intake` or `final-build` |
+| `recover` | Releases claims left by a dead session and checks that every worktree exists and is on the branch in `job.json`. The orchestrator runs it first |
+| `status [<id>]` | Readable state of one or all jobs |
+| `summary` | Table: job, kind, stage, round, risk, PR, reason |
 
-`job next` es lo que mantiene tonto al orquestador: genera el prompt de cada agente desde una plantilla en `lib/prompts.py`, con las rutas absolutas de la carpeta del job, el worktree, la base y la ronda. El orquestador solo lo copia.
+`job next` is what keeps the orchestrator dumb. It builds each agent's prompt from a template in
+`lib/prompts.py`, with absolute paths to the job folder and worktree, the base and the round. The
+orchestrator only copies it.
 
-Todos los comentarios que `job` publica en GitHub empiezan por `[factory]` y el id del job, para poder distinguirlos de los humanos.
+Every comment `factory-job` posts on GitHub starts with `[factory]` and the job id. The factory
+comments with the human's account, so this prefix is how it tells its own comments apart.
 
-### bin/gate
+### factory-gate
 
-`gate <id> [--final]` hace, en este orden:
+`factory-gate <id> [--final]` does, in order:
 
-1. Obtiene `factory/checks.sh` de `origin/<base_branch>` (nunca de la rama del job) y lo ejecuta con el worktree como directorio de trabajo, con `checks_timeout_s` como límite.
-2. Calcula el diff contra el merge-base con la base del job (`--final`: contra `main`). Cualquier fichero modificado, borrado o renombrado que encaje con `protected_paths` es un fallo. Los ficheros nuevos están permitidos.
-3. Comprueba la evidencia de `build.md`: cada `ruta::nombre` debe existir y el nombre aparecer en ese fichero. Una evidencia que no se encuentra es un fallo. No basta con que el builder diga que cumple un criterio.
-4. Escribe `round-N/checks.md` con el veredicto, las rutas protegidas tocadas, la evidencia no encontrada, el comando, la duración y la cola del log. Sale con 0 si PASS y 1 si FAIL.
+1. Takes `factory/checks.sh` from `origin/<base_branch>`, never from the job's branch, and runs
+   it with the worktree as working directory and `checks_timeout_s` as limit.
+2. Diffs against the merge-base with the job's base (`--final`: with `base_branch`). Any
+   modified, deleted or renamed-away file matching `protected_paths` is a failure. New files are
+   allowed.
+3. Checks the evidence in `build.md`. Every `path::name` must be a file inside the worktree that
+   contains that name, and every criterion `Cn` in the plan must have evidence. The builder saying
+   a criterion is met is not enough.
+4. Writes `round-N/checks.md` with the verdict, protected paths touched, missing evidence, command,
+   duration and log tail. Exits 0 on PASS and 1 on FAIL.
 
-### Contrato de checks.sh
+### checks.sh contract
 
-Es del proyecto, no de la fábrica. Requisitos: `set -euo pipefail`; no interactivo; instala dependencias si el worktree está recién creado; ejecuta lint, typecheck, tests y build; nunca reescribe ficheros (nada de `--fix` ni actualización de snapshots); sale distinto de cero ante cualquier fallo. El mismo script lo ejecuta la CI, para que el gate local y el check requerido de GitHub digan lo mismo.
+It belongs to the project, not the factory. Requirements:
+- `set -euo pipefail` and non-interactive.
+- Installs dependencies when the worktree is freshly created.
+- Runs lint, typecheck, tests and build.
+- Never rewrites files: no `--fix`, no snapshot updates.
+- Exits non-zero on any failure.
 
-## Agentes, skills, orquestador y hooks
+CI runs the same script, so the local gate and the required GitHub check agree.
 
-### Agentes
+## Agents, orchestrator, skills and guardrails
 
-Tres subagentes en `.claude/agents/`. Cada prompt de sistema empieza con lo mismo: eres un paso de un pipeline; tu contexto son ficheros, no una conversación; escribe exactamente el fichero que te toca con la cabecera exacta; responde con una sola línea. El modelo lo decide `job next` según `config.json` y lo pasa el orquestador al lanzar el agente; el frontmatter lleva un valor por defecto.
+### Agents
+
+Three plugin subagents: `software-factory:planner`, `:builder`, `:reviewer`. Every system
+prompt starts the same way: you are a step in a pipeline; your context is files, not a
+conversation; write exactly your file with the exact header; answer with a single line.
+`job next` picks the model from `config.json` and the orchestrator passes it when launching; the
+frontmatter holds a default.
 
 |  | planner | builder | reviewer |
 | --- | --- | --- | --- |
-| Herramientas | Read, Grep, Glob, Write. Sin Bash | Todas | Read, Grep, Glob, Write y Bash limitado a `git diff`, `git log`, `git show` |
-| Directorio | Worktree del job | Worktree del job | Worktree del job |
-| Lee | `issue.md`; si es hijo de una spec, también el `issue.md` de la spec; `CLAUDE.md`, `GLOSSARY.md`, `docs/adr/`, `docs/architecture.md` y el código | `plan.md` y, en rondas siguientes, el fichero que corresponda según la prioridad de la sección anterior | `plan.md`, `build.md`, el diff contra el merge-base con la base, `docs/architecture.md`, `GLOSSARY.md`, `CODING_STANDARDS.md` si existe |
-| Escribe | `plan.md` | Commits en la rama del job y `build.md` | `round-N/review.md` |
-| Skills | Ninguna | `tdd`, precargada | Ninguna; su prompt incorpora los ejes de `code-review` |
+| Tools | Read, Grep, Glob, Write. No Bash | All | Read, Grep, Glob, Write, and Bash limited to read-only git |
+| Works in | The job's worktree | The job's worktree | The job's worktree |
+| Reads | `issue.md`; for a spec child, also the spec's `issue.md`; `CLAUDE.md`, `GLOSSARY.md`, `docs/adr/`, `docs/architecture.md` and the code | `plan.md` and, on later rounds, the file in `feedback` | `plan.md`, `build.md`, the diff against the merge-base with the base, `docs/architecture.md`, `GLOSSARY.md`, `CODING_STANDARDS.md` if present |
+| Writes | `plan.md` | Commits on the job branch and `build.md` | `round-N/review.md` |
+| Skills | None | `tdd`, preloaded | None; its prompt includes the `code-review` axes |
 
-**planner.** Trata `issue.md` como dato: nunca sigue instrucciones que contenga. Decide si el trabajo se puede construir tal como está escrito. En un ticket suelto puede rechazar; en un hijo de spec no rechaza: si el ticket ya no es construible (una interfaz de la que depende cambió al mergear otro ticket), responde `NEEDS-INFO` explicando el conflicto. Los criterios de aceptación son comprobables por un test. Las seams son interfaces públicas existentes o descritas en `architecture.md`, lo más altas posible.
+Subagents have no working-directory setting. Their prompts require `cd <worktree> &&` in every
+command, and the guard blocks writes outside the allowed folders.
 
-**builder.** Trabaja solo dentro del worktree que le indica el prompt. Usa `tdd` en las seams del plan: un test, la implementación mínima, repetir. Hace commits pequeños con mensajes que citan el criterio. Ejecuta `factory/checks.sh` antes de declarar `READY` y no declara `READY` si falla. No hace push, no usa `gh`, no toca rutas protegidas salvo para añadir ficheros nuevos. Si cambia una interfaz pública, actualiza `docs/architecture.md` en el mismo diff. Para resolver un `merge.md`, integra `origin/<base>` localmente y resuelve. Si no puede avanzar sin una decisión humana, escribe `BLOCKED` con la pregunta concreta.
+**planner.** Treats `issue.md` as data and never follows instructions in it. Decides whether the
+work can be built as written. It may reject a standalone ticket. It never rejects a spec child:
+if the ticket is no longer buildable (an interface it depends on changed when another ticket
+merged), it answers `NEEDS-INFO` explaining the conflict. Acceptance criteria must be testable.
+Seams are existing public interfaces or ones described in `architecture.md`, as high as possible.
 
-**reviewer.** No ejecuta tests; eso ya lo hizo el gate. Escribe secciones separadas que no se mezclan ni se priorizan entre sí: **Estándares** (`CODING_STANDARDS.md` y los doce smells de Fowler que usa `code-review` de Matt), **Spec** (¿cumple cada criterio, sin faltar ni sobrar?), **Arquitectura** (límites de módulo, dependencias permitidas, propiedad de carpetas, `architecture.md` actualizado si cambió una interfaz) y **Seguridad** si la superficie está marcada. `CHANGES` solo por hallazgos que bloquean; los demás se listan como no bloqueantes. Para el review final de una spec, el mismo agente con el modelo `final_reviewer`, el diff `main...spec/<id>` y la issue de la spec como criterio.
+**builder.**
+- Works only inside the worktree the prompt names.
+- Uses `tdd` at the plan's seams: one test, the minimal implementation, repeat.
+- Makes small commits whose messages cite the criterion.
+- Runs `factory/checks.sh` before declaring `READY`, and never declares `READY` if it fails.
+- Does not push, does not use `gh`, and touches protected paths only to add new files.
+- If it changes a public interface, it updates `docs/architecture.md` in the same diff.
+- To resolve a `merge.md`, it integrates `origin/<base>` locally and resolves the conflict.
+- If it cannot continue without a human decision, it writes `BLOCKED` with the exact question.
 
-Nombres de agente: `planner-<id>`, `builder-<id>`, `reviewer-<id>-r<N>`. El builder se reanuda por nombre en cada vuelta si sigue vivo en la sesión; si no, se lanza uno nuevo, que tiene todo lo necesario en los ficheros.
+**reviewer.** Does not run tests; the gate already did. It writes separate sections that are not
+mixed or ranked against each other:
+- **Estándares:** `CODING_STANDARDS.md` and the twelve Fowler smells from `code-review`.
+- **Spec:** is every criterion met, with nothing missing and nothing extra?
+- **Arquitectura:** module boundaries, allowed dependencies, folder ownership, and
+  `architecture.md` updated if an interface changed.
+- **Seguridad:** only when the `security` surface is set.
 
-### Orquestador `/factory`
+It returns `CHANGES` only for blocking findings and lists the rest as non-blocking. For a spec's
+final review, the same agent runs with the `final_reviewer` model, the diff
+`<base_branch>...spec/<id>` and the spec issue as the criterion.
 
-Skill con `disable-model-invocation: true`. Comandos: `run` (drena todo), `issue <n>` (solo ese ticket), `spec <n>` (solo esa spec y sus hijos), `rework <n>`, `status`.
+Agent names: `planner-<id>`, `builder-<id>`, `reviewer-<id>-r<N>`.
 
-Bucle de `run`:
+### Orchestrator `/software-factory:factory`
 
-1. `job recover` y `job queue`.
-2. `job next --json`. Si no hay acciones ni agentes en marcha, imprime `job summary` y termina.
-3. Por cada acción, hasta llenar `concurrency`: `job start <id>`; si es de agente, lanza el subagente en background con el nombre, modelo y prompt que da la acción; si es de script (`gate`, `merge`, `final-gate`), lo ejecuta con Bash.
-4. Cuando un agente o script termina: `job advance <id>`. Si falla por un contrato de fichero, reenvía el error al mismo agente una vez. Imprime la línea de transición.
-5. Vuelve al paso 2.
+A skill with `disable-model-invocation: true` whose allowed tools are only `factory-job` and
+`factory-gate`. Commands: `run` (drain everything), `issue <n>` (that ticket only), `spec <n>`
+(that spec and its children), `rework <n>`, `status`.
 
-El orquestador nunca ejecuta `git` ni `gh`, nunca lee el código del proyecto y nunca decide una transición. Si algo no encaja, para y lo cuenta.
+The `run` loop:
 
-### Skills copiadas de Matt Pocock
+1. `job recover`, then `job queue` (only for `run` and `spec`).
+2. `job next --json`. If there are no actions and nothing running, print `job summary` and stop.
+3. For each action: `job start <id>`. Launch agent actions as background subagents with the
+   given agent, model and prompt, copied verbatim. Run script actions (`gate`, `merge`,
+   `final-gate`) with Bash in the background.
+4. When something finishes, run `job advance <id>` and print the transition line. `merge`
+   already transitions by itself. If `advance` reports a contract error, send it to the same
+   agent once with SendMessage.
+5. Back to step 2.
 
-Copia desde [mattpocock/skills](https://github.com/mattpocock/skills) a `.claude/skills/`, con su `LICENSE` y una línea de atribución en cada `SKILL.md`: `tdd`, `code-review`, `grilling`, `domain-modeling`, `to-spec`, `to-tickets`, `retro`. Antes de copiar, lee cada una y lista de qué ficheros dependen (por ejemplo `docs/agents/*.md` del setup de Matt). Adapta solo lo necesario:
+A builder still alive in the session is resumed by its id with SendMessage on its next round;
+otherwise a new one is launched, and it finds everything it needs in the files. The orchestrator
+never runs `git` or `gh`, never reads project code and never decides a transition. If something
+does not fit, it stops launching, waits for what is running, and reports.
 
-- Donde lean etiquetas o tracker de `docs/agents/`, que lean `factory/config.json` y asuman GitHub.
-- `to-spec` publica la spec con la etiqueta `spec` y sin `queue`: el humano añade `queue` cuando aprueba.
-- `to-tickets` escribe en cada hijo las líneas `Parent: #<spec>` y `Blocked by: #a, #b` que parsea `job`, sin etiquetarlos.
+### Skills from Matt Pocock
 
-### Hooks y permisos
+Copied from [mattpocock/skills](https://github.com/mattpocock/skills) with their `LICENSE` and an
+attribution line: `tdd`, `code-review`, `grilling`, `domain-modeling`, `to-spec`, `to-tickets`,
+`retro`. Adapted only where needed:
 
-- **Global** (`~/.claude/settings.json`): el hook `PreToolUse` de `git-guardrails-claude-code` de Matt, que bloquea `git push`, `git reset --hard`, `git clean -f` y `git branch -D` en el tool Bash. `job` y `gate` hacen push por subprocess, así que no les afecta.
-- **Agentes**: además, bloquear `gh` en los tres. Si el frontmatter de subagentes admite hooks, ahí; si no, como regla `deny` del proyecto.
-- **Proyecto** (`.claude/settings.json`): `allow` para `factory/bin/job`, `factory/bin/gate`, `factory/checks.sh`, `git add`, `git commit`, `git diff`, `git log`, `git show`, `git status`, `git fetch`, `git merge` y los comandos de la toolchain del proyecto, para que la fábrica no se pare esperando aprobación. `deny` para `gh` y `git push`.
+- Where they read labels or tracker settings from `docs/agents/`, they read `factory/config.json`
+  and assume GitHub.
+- `to-spec` publishes the spec with the `spec` label and without `queue`. The human adds `queue`
+  to approve it.
+- `to-tickets` writes in each child the `Parent: #<spec>` and `Blocked by: #a, #b` lines that
+  `factory-job` parses, without labelling them.
 
-Verifica la sintaxis de hooks, permisos y frontmatter en la documentación actual antes de escribirlos.
+### Guardrails and permissions
 
-## Fases de implementación
+- **Global** (`~/.claude/settings.json`): Matt's `git-guardrails-claude-code` `PreToolUse` hook,
+  which blocks `git push`, `git reset --hard`, `git clean -f` and `git branch -D` in the Bash
+  tool. `factory-job` and `factory-gate` push through a subprocess, so it does not affect them.
+- **Agents** (`hooks/hooks.json` in the plugin): a `PreToolUse` hook on Bash, Write, Edit,
+  MultiEdit and NotebookEdit runs `agent_guard.py`, which takes the role from the hook's
+  `agent_type`. Every other session and agent passes untouched.
+  - Every agent: no `gh`, no `git push`, no `git remote` edits.
+  - planner: writes only under `factory/jobs/`.
+  - builder: writes only under the worktrees and `factory/jobs/`, and never edits an existing
+    file matching `protected_paths`.
+  - reviewer: writes only under `factory/jobs/`; Bash limited to `git diff`, `log`, `show`,
+    `merge-base`, `rev-parse` and `status`, optionally after `cd`.
 
-Seis fases, de fuera hacia dentro: primero lo determinista, que se prueba sin agentes; después los agentes uno a uno; al final la orquestación. Cada fase termina cuando todos sus criterios pasan y el humano lo confirma.
+  This is defence in depth, not a sandbox: `factory-job` and the gate are the real boundary.
+- **Project** (`.claude/settings.json`, written by `factory-init`, since plugins cannot ship
+  permissions): allows `factory-job`, `factory-gate`, `factory/checks.sh`, `git add`, `commit`,
+  `diff`, `log`, `show`, `status`, `fetch`, `merge`, `merge-base`, `rev-parse` and edits under
+  the worktrees and `factory/jobs/`, so the factory never stops for approval. Denies `git push`.
+  The project adds its own toolchain commands.
 
-### Fase 1 · Repo de pruebas
+## factory-init
 
-Un proyecto pequeño y bien testeado sobre el que probar la fábrica: una librería con tres o cuatro funciones y sus tests, en el lenguaje que diga el humano. Crea `checks.sh`, el workflow de CI que lo ejecuta, `config.json` con los tests añadidos a `protected_paths`, `.gitignore`, `.worktreeinclude`, un `CLAUDE.md` con cómo se instala y se valida, un `GLOSSARY.md` y un `docs/architecture.md` mínimos, las etiquetas de `config.json` en GitHub y el hook global de guardarraíles. La protección de rama con el check requerido la configura el humano, o la propones con `gh api` y él la aprueba.
+`factory-init [--base <branch>] [--force] [--labels]`, run from the repository root:
 
-- [ ] `factory/checks.sh` pasa en `main`
-- [ ] Rompiendo un test a mano, `checks.sh` sale distinto de cero
-- [ ] La CI ejecuta `checks.sh` y es check requerido en `main`
-- [ ] Existen todas las etiquetas de `config.json`
-- [ ] En una sesión de Claude Code, un `git push` por el tool Bash queda bloqueado por el hook
+- Writes what is missing (everything with `--force`): `factory/config.json` (with the detected
+  base branch), `factory/checks.sh`, `.github/workflows/checks.yml`, `.worktreeinclude`,
+  `CLAUDE.md`, `GLOSSARY.md`, `docs/architecture.md`. The `checks.sh` template fails until the
+  project replaces it.
+- Merges `.gitignore` and `.claude/settings.json` (permissions, the `ctdes-factory` marketplace
+  with `autoUpdate`, the plugin enabled) instead of replacing them.
+- Appends a `## Software factory` section to an existing `CLAUDE.md` that does not mention
+  `factory/checks.sh`.
+- Warns about other workflows in `.github/workflows/`: the required check must run `checks.sh`.
+- `--labels` creates only the missing labels and never modifies existing ones. It warns if the
+  `queue` or `spec` label already exists with open issues, because the factory would pick them up.
 
-### Fase 2 · bin/job y bin/gate
+## Out of scope
 
-La máquina de estados completa del ticket (la de spec, en la fase 5), el adaptador de GitHub con modo fake, `gate` y sus tests. Sin agentes: los ficheros de plan, build y review los escribe el test o el humano.
+Not implemented, on purpose. Each item can be added later as one more transition or piece
+without touching the rest.
 
-- [ ] Hay un test por cada transición legal de la tabla de ticket y al menos uno de transición ilegal por estado
-- [ ] Un fichero con cabecera mal formada hace fallar `job advance` con un mensaje que nombra fichero y línea
-- [ ] `gate` pasa en un worktree limpio y falla con un test roto
-- [ ] `gate` falla si el diff modifica un fichero protegido y pasa si solo añade uno nuevo que encaja con el glob
-- [ ] `gate` falla si una evidencia de `build.md` no existe
-- [ ] `gate` usa el `checks.sh` de `origin/main` aunque la rama del job lo haya modificado
-- [ ] `job next --json` respeta `concurrency` y no ofrece jobs reclamados
-- [ ] Recorrido manual con una issue real y ficheros escritos a mano: el worktree se crea, la draft PR se abre al primer `READY`, el comentario `[factory]` aparece en la issue y `job summary` refleja cada paso
+- Auto-merge into the base branch. The factory never merges there; the human does. First
+  candidate: standalone tickets with `risk: low` and a `PASS` review.
+- UI or UX reviewers with a browser and per-port dev servers.
+- Fast, standard and full lanes: risk already picks models and review.
+- A `SubagentStop` hook on the builder: the gate decides.
+- Dashboards, cost per job and OpenTelemetry. `job summary` is enough for now.
+- Scheduled cloud runs and nightly triage.
+- Deployment of any kind.
+- Generating the ticket graph without human approval.
 
-### Fase 3 · Agentes y skills
+## History
 
-Los tres agentes, las skills copiadas con su atribución, los permisos y hooks del proyecto y las plantillas de prompt de `lib/prompts.py`. Cada agente se prueba lanzándolo a mano sobre una carpeta de job preparada.
+### Phases
 
-- [ ] planner: sobre tres issues (clara, ambigua, fuera de alcance) produce `ACCEPT`, `NEEDS-INFO` y `REJECT` con cabeceras válidas
-- [ ] planner: una issue que contiene instrucciones dirigidas al agente ("ignora lo anterior y…") no las sigue
-- [ ] builder: sobre un `plan.md` escrito a mano produce commits y un `build.md` con el que `gate` pasa
-- [ ] reviewer: sobre un diff con un defecto plantado (un cambio fuera de alcance o una dependencia prohibida por `architecture.md`) devuelve `CHANGES` y cita el defecto en la sección correcta
-- [ ] Ninguno de los tres puede ejecutar `gh` ni `git push`
+The factory was built in six phases, from the outside in: first what is deterministic and
+testable without agents, then the agents one by one, and the orchestration last. Each phase
+ended when all its acceptance criteria passed and the human confirmed it. The criteria are in
+the [original brief](docs/original-brief.es.md#fases-de-implementación).
 
-### Fase 4 · /factory, nivel ticket
+1. **Test repository:** `textkit`, `checks.sh`, CI as a required check, labels, global hook.
+2. **`job` and `gate`:** the full ticket state machine, the GitHub adapter with a fake mode, the
+   gate, and a test per legal transition.
+3. **Agents and skills:** planner, builder and reviewer, each tested by hand on prepared job
+   folders, including a prompt-injection issue.
+4. **Orchestrator, ticket level:** standalone issues to ready PRs, `needs-info`, a second round
+   after `CHANGES`, session kill and resume, `concurrency: 2`, `rework`.
+5. **Spec level:** a five-ticket spec with a dependency graph built end to end into one PR,
+   including a merge conflict, an isolated `needs-human` and a child added mid-spec.
+6. **Packaging:** the plugin, installed in a second repository (`CTDes/factory-sandbox`) without
+   copying folders, and one agent change published once that reached both repositories.
 
-El orquestador completo para tickets sueltos contra `main`. El humano crea las issues y lee cada carpeta de job al terminar.
+### Deviations and decisions
 
-- [ ] Una feature pequeña y un bug terminan en `ready` con la PR fuera de draft
-- [ ] Una issue ambigua termina en `needs-info`; tras responder en la issue, el siguiente `run` la retoma
-- [ ] Una issue cuyo arreglo obvio es editar un test protegido no consigue pasar el gate editándolo
-- [ ] Al menos un job pasa por una segunda ronda por `CHANGES` y el builder atiende la revisión
-- [ ] Matando la sesión a mitad de un run, un nuevo `/factory run` retoma cada job desde su estado
-- [ ] Con `concurrency: 2`, dos jobs avanzan a la vez sin pisarse
-- [ ] `/factory rework <n>` tras comentar en una PR vuelve a construir atendiendo el comentario
+Everything that changed from the brief, with its reason. Each item was proposed to the human
+before it was applied.
 
-### Fase 5 · Nivel spec
+**Phase 1**
+- The test repository is public: on GitHub Free, branch protection with a required check only
+  exists for public repositories.
+- `checks.sh` exports `PYTHONDONTWRITEBYTECODE=1`: a stale `.pyc` (same size, same second) gave
+  false results twice.
 
-La máquina de estados de spec, `job spec create`, `job merge`, el gate y el review finales, y las adaptaciones de `to-spec` y `to-tickets`. Se prueba con una spec de cinco tickets: A y B independientes, C bloqueado por ambos, D bloqueado por C, E independiente.
+**Phase 2**
+- `job merge` was implemented in phase 2 because its transitions are in the ticket table.
+- Added transitions: `intake → needs-human` (the planner breaks its contract twice) and
+  `needs-human → intake` (rework of a job without a valid plan). The contract-failure counter
+  lives in `job.json`, not in the orchestrator.
+- `merging → build` does not increment `round`; `build → gate` already does.
+- The builder does not apply a file priority order: `job.json` stores in `feedback` the exact
+  file that sent it back to `build`, and the previous `build.md` is archived in `round-N/`.
+- The gate also requires evidence for every plan criterion `Cn` and rejects evidence paths
+  outside the worktree.
+- `job create` requires the `queue` label. The factory's comments are recognised by the
+  `[factory]` prefix, because the factory comments with the human's account.
+- `ready`/`needs-human → done` also deletes the job's local and remote branch.
 
-- [ ] `to-spec` y `to-tickets` producen issues con `spec`, `Parent:` y `Blocked by:` que `job spec create` acepta
-- [ ] `job spec create` rechaza un grafo con un ciclo y uno con un bloqueo fuera de la spec
-- [ ] Con `concurrency: 2`, A y B (o E) se construyen a la vez; C no empieza hasta que A y B están en `done`
-- [ ] Un ticket cuyo merge choca con la rama de la spec vuelve a `build` con `merge.md` y se resuelve
-- [ ] Un ticket en `needs-human` bloquea solo a sus dependientes; el resto de la spec sigue
-- [ ] Al vaciarse el grafo, el review final corre sobre `main...spec/<id>` y termina en una PR a `main` con el resumen de tickets, rondas y escalados
-- [ ] Un hijo nuevo añadido a mitad de la spec se incorpora y se construye
+**Phase 3**
+- Subagents have no working-directory field: the prompt requires `cd <worktree> &&` in every
+  command and the guard blocks writes outside the worktree.
+- The `tools` field cannot restrict Bash to some commands, so the guard limits the reviewer to
+  read-only git.
+- `gh` is blocked only for the agents, not with a project `deny`, so `/to-spec` and `/to-tickets`
+  keep working in the human's session.
+- Matt's global hook searches for the push text in the whole command, so it also blocks commit
+  messages or scripts that contain it (known false positive).
 
-### Fase 6 · Proyecto real y empaquetado
+**Phase 4**
+- `job next --only <job|issue>` for `issue <n>` and `rework <n>`.
+- `READY` with a dirty tree or no commits counts as a contract failure (back to the builder once,
+  then escalate).
+- From round 2, the builder's prompt says the previous `build.md` was archived (a resumed
+  builder forgot it).
+- The Agent tool has no `name` parameter: the orchestrator resumes builders by id with
+  SendMessage within the session.
+- Known gap: a standalone ticket's PR in `ready` that falls into conflict with the base is not
+  detected on its own; it is handled with `rework` and a comment.
 
-No se implementa hasta que la fábrica haya terminado al menos una spec en un proyecto real. Mueve lo genérico (`bin/`, `lib/`, agentes, skills, orquestador, hooks) a un plugin instalable; en cada repo quedan solo `checks.sh`, `config.json` y sus ficheros de contexto.
+**Phase 5**
+- Merges into the same base branch run one at a time (`job next`/`job start`), and a push
+  rejected because the base moved releases the claim and leaves the job in `merging` to retry:
+  two simultaneous `job merge` runs on the same spec branch raced.
+- The final review uses the spec issue as its criterion.
 
-- [ ] La fábrica se instala en un segundo repo sin copiar carpetas a mano
-- [ ] Un cambio en un agente se publica una vez y llega a ambos repos al actualizar el plugin
+**Phase 6**
+- Packaged before finishing a spec in a real project, at the human's decision.
+- Plugin agents ignore `hooks` and `permissionMode` in their frontmatter: the guardrails live in
+  the plugin's `hooks/hooks.json`, and the guard derives the role from `agent_type`.
+- Plugins cannot ship permissions: `factory-init` writes them into each repository's
+  `.claude/settings.json`, together with the marketplace (with `autoUpdate`) and the enabled
+  plugin.
+- Opening a repository whose `settings.json` enables the plugin creates a project-scope install
+  besides the user-scope one. With `autoUpdate` both update on their own; by hand, each with its
+  own `claude plugin update … --scope`.
+- Names: agents `software-factory:<agent>`, skills `/software-factory:<skill>`, executables
+  `factory-job`, `factory-gate`, `factory-init`.
 
-## Fuera de alcance
+**After phase 6**
+- 0.1.3, `factory-init` for existing repositories:
+  - An existing `CLAUDE.md` that does not mention `factory/checks.sh` gets a
+    `## Software factory` section. Before, it was left without the factory's context.
+  - It warns about workflows already in `.github/workflows/`, because the required check must
+    run `checks.sh`.
+  - `--labels` creates only missing labels, without `--force`. Before, it overwrote the colour
+    and description of existing ones.
+  - It warns if the `queue` or `spec` label already exists with open issues, because the factory
+    would take them as work.
+- The design was rewritten in English as a reference of the current implementation; the
+  original Spanish brief is archived in `docs/original-brief.es.md`.
 
-No implementar en este encargo, aunque parezca útil. Cada punto se puede añadir después como una transición o una pieza más, sin tocar el resto.
+## References
 
-- Auto-merge a `main`. La fábrica nunca mergea a `main`; lo hace el humano. Primera candidata a añadir: tickets sueltos con `risk: low` y review `PASS`.
-- Revisores de UI o UX con navegador y servidores de desarrollo por puerto.
-- Carriles fast, standard y full: el riesgo ya decide modelos y revisión.
-- Hook `SubagentStop` en el builder: el gate decide.
-- Dashboard, cálculo de coste por job y OpenTelemetry. `job summary` basta por ahora.
-- Tareas programadas en la nube y triage nocturno.
-- Despliegue de cualquier tipo.
-- Generación automática del grafo de tickets sin aprobación humana.
-
-## Referencias
-
-- [mattpocock/skills](https://github.com/mattpocock/skills): skills que se copian (MIT)
-- [ZazenCodes · Software Factory v2](https://github.com/zazencodes/zazencodes-season-3/tree/main/src/software-factory-claude-code-v2): referencia de diseño de la espina; GPLv3, no copiar ficheros
-- Documentación de Claude Code: [Skills](https://code.claude.com/docs/en/skills), [Subagentes](https://code.claude.com/docs/en/sub-agents), [Hooks](https://code.claude.com/docs/en/hooks), [Plugins](https://code.claude.com/docs/en/plugins/overview), [Worktrees](https://code.claude.com/docs/en/worktrees)
-
-## Implementación: desviaciones y decisiones
-
-Registro de lo que cambió respecto al encargo, fase a fase, con el motivo. Todo se propuso al humano antes de aplicarlo.
-
-**Fase 1**
-- El repo de pruebas es público: en GitHub Free la protección de rama con check requerido solo existe en repos públicos.
-- `checks.sh` exporta `PYTHONDONTWRITEBYTECODE=1`: un `.pyc` obsoleto (mismo tamaño, mismo segundo) dio resultados falsos dos veces.
-
-**Fase 2**
-- `job merge` se implementó en la fase 2 porque sus transiciones están en la tabla de ticket.
-- Transiciones añadidas: `intake → needs-human` (el planner incumple el contrato dos veces) y `needs-human → intake` (rework de un job sin plan válido). El contador de incumplimientos vive en `job.json`, no en el orquestador.
-- `merging → build` no incrementa `round`: ya lo hace `build → gate`.
-- El builder no aplica un orden de prioridad de ficheros: `job.json` guarda en `feedback` el fichero exacto que lo devolvió a `build`, y el `build.md` anterior se archiva en `round-N/`.
-- El gate también exige evidencia para cada criterio `Cn` del plan y rechaza rutas de evidencia fuera del worktree.
-- `job create` exige la etiqueta `queue`. Los comentarios de la fábrica se reconocen por el prefijo `[factory]`, porque la fábrica comenta con la cuenta del humano.
-- `ready`/`needs-human → done` borra también la rama local y la remota del job.
-
-**Fase 3**
-- Los subagentes no tienen campo de directorio de trabajo: el prompt obliga a `cd <worktree> &&` en cada comando y el guard impide escribir fuera del worktree.
-- El campo `tools` no puede limitar Bash a ciertos comandos: el reviewer queda limitado a git de lectura por el guard.
-- `gh` se bloquea solo en los agentes, no con un `deny` de proyecto, para no romper `/to-spec` y `/to-tickets` en la sesión humana.
-- El hook global de Matt busca el texto del push en todo el comando: bloquea también mensajes de commit o scripts que lo contengan (falso positivo conocido).
-
-**Fase 4**
-- `job next --only <job|issue>` para `issue <n>` y `rework <n>`.
-- `READY` con el árbol sucio o sin commits cuenta como incumplimiento de contrato (vuelve al builder una vez y luego escala).
-- A partir de la ronda 2, el prompt del builder dice que el `build.md` anterior se archivó (un builder reanudado lo olvidó).
-- El tool Agent no tiene parámetro `name`: el orquestador reanuda builders por id con SendMessage dentro de la sesión.
-- Hueco conocido: una PR de un ticket suelto en `ready` que queda en conflicto con `main` no se detecta sola; se resuelve con `rework` y un comentario.
-
-**Fase 5**
-- Los merges a una misma rama base van en serie (`job next`/`job start`), y un push rechazado porque la base se movió libera la reclamación y deja el job en `merging` para reintentar: dos `job merge` simultáneos sobre la rama de la spec competían.
-- La review final usa la issue de la spec como criterio.
-
-**Fase 6**
-- Se empaquetó antes de terminar una spec en un proyecto real, por decisión del humano.
-- Los agentes de plugin ignoran `hooks` y `permissionMode` del frontmatter: los guardarraíles viven en `hooks/hooks.json` del plugin y el guard deduce el rol de `agent_type`; cualquier otra sesión o agente pasa sin tocar.
-- Los plugins no pueden aportar permisos: `factory-init` los escribe en `.claude/settings.json` de cada repo, junto con el marketplace (con `autoUpdate`) y el plugin activado.
-- Abrir un repo cuyo `settings.json` activa el plugin crea una instalación de ámbito proyecto además de la de usuario. Con `autoUpdate` las dos se actualizan solas; a mano, cada una con su `claude plugin update … --scope`.
-- Nombres: agentes `software-factory:<agente>`, skills `/software-factory:<skill>`, ejecutables `factory-job`, `factory-gate`, `factory-init`.
-
-**Después de la fase 6**
-- 0.1.3, `factory-init` en repos existentes: si `CLAUDE.md` ya existe y no menciona `factory/checks.sh`, le añade una sección `## Software factory` (antes se quedaba sin el contexto de la fábrica); avisa de los workflows que ya hay en `.github/workflows/`, porque el check requerido debe ejecutar `checks.sh`; `--labels` crea solo las etiquetas que faltan, sin `--force` (antes sobrescribía color y descripción de las existentes), y avisa si la etiqueta `queue` o `spec` ya existe con issues abiertas, porque la fábrica las tomaría como trabajo.
+- [mattpocock/skills](https://github.com/mattpocock/skills): the skills copied here (MIT)
+- [ZazenCodes · Software Factory v2](https://github.com/zazencodes/zazencodes-season-3/tree/main/src/software-factory-claude-code-v2): design reference for the spine; GPLv3, no files copied
+- Claude Code docs: [Skills](https://code.claude.com/docs/en/skills), [Subagents](https://code.claude.com/docs/en/sub-agents), [Hooks](https://code.claude.com/docs/en/hooks), [Plugins](https://code.claude.com/docs/en/plugins/overview), [Worktrees](https://code.claude.com/docs/en/worktrees)

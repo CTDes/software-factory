@@ -33,7 +33,7 @@ issue labelled ready-for-agent
   `/software-factory:factory run` picks up where it left off.
 
 The full specification, state machines and the log of design decisions are in
-[`plugin/DESIGN.md`](plugin/DESIGN.md), which is written in Spanish.
+[`plugin/DESIGN.md`](plugin/DESIGN.md).
 
 ## Quick start
 
