@@ -1,7 +1,10 @@
 import unittest
+from pathlib import Path
 
 import textkit
 from textkit import format_stats
+
+ARCHITECTURE = Path(__file__).resolve().parent.parent / "docs" / "architecture.md"
 
 
 class FormatStatsTest(unittest.TestCase):
@@ -32,6 +35,9 @@ class FormatStatsTest(unittest.TestCase):
     def test_exported_and_all_sorted(self) -> None:
         self.assertIn("format_stats", textkit.__all__)
         self.assertEqual(textkit.__all__, sorted(textkit.__all__))
+
+    def test_architecture_mentions_format_stats(self) -> None:
+        self.assertIn("format_stats", ARCHITECTURE.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
