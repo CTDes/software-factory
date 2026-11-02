@@ -106,3 +106,11 @@ def text_stats(text: str) -> dict[str, int]:
         "unique_words": unique_words(text),
         "sentences": sentence_count(text),
     }
+
+
+def longest_word(text: str) -> str:
+    """Return the longest word in ``text`` (first one on ties), or ``""`` if there are none.
+
+    Example: ``longest_word("¡Extraordinario!")`` -> ``"Extraordinario"``.
+    """
+    return max(_WORD_RE.findall(text), key=len, default="")

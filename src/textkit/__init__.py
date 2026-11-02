@@ -3,6 +3,7 @@
 from textkit.text import (
     char_count,
     initials,
+    longest_word,
     normalize,
     reading_time,
     sentence_count,
@@ -16,6 +17,7 @@ from textkit.text import (
 __all__ = [
     "char_count",
     "initials",
+    "longest_word",
     "normalize",
     "reading_time",
     "sentence_count",
