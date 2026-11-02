@@ -85,3 +85,11 @@ def char_count(text: str) -> int:
     Example: ``char_count(" a b\\tc\\n1!")`` -> ``5``.
     """
     return sum(1 for ch in text if not ch.isspace())
+
+
+def longest_word(text: str) -> str:
+    """Return the longest word in ``text`` (first one on ties), or ``""`` if there are none.
+
+    Example: ``longest_word("¡Extraordinario!")`` -> ``"Extraordinario"``.
+    """
+    return max(_WORD_RE.findall(text), key=len, default="")
