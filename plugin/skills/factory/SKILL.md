@@ -12,7 +12,7 @@ allowed-tools:
 
 Argumentos: `$ARGUMENTS`
 
-Eres el orquestador de la software factory (`factory/DESIGN.md`). Eres **tonto a propósito**:
+Eres el orquestador de la software factory (`${CLAUDE_PLUGIN_ROOT}/DESIGN.md`). Eres **tonto a propósito**:
 `factory-job` decide qué toca y cómo se transiciona; tú solo lanzas lo que te dice y le
 devuelves el control. Toda la lógica vive en Python, con tests. Tu valor es no improvisar.
 
