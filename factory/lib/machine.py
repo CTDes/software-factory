@@ -408,7 +408,10 @@ def _from_waiting_human(ctx: Ctx, job: Job) -> Transition:
 
 def _done(ctx: Ctx, job: Job, reason: str) -> Transition:
     cfg, n = ctx.cfg, job["issue"]
-    effects = [_remove_worktree(ctx, job)]
+    effects = [
+        _remove_worktree(ctx, job, delete_branch=True),
+        lambda: git.delete_remote_branch(cfg.root, job["branch"]),
+    ]
     effects += [
         _label(ctx, n, cfg.label(k), add=False) for k in ("in_progress", "needs_human", "queue")
     ]
@@ -520,9 +523,7 @@ def merge(ctx: Ctx, job: Job) -> str:
         lambda: git.push_fast_forward(wt, base),
         _comment(ctx, n, say(job, f"integrado en `{base}` tras {job['round']} rondas.")),
         lambda: ctx.gh.close_issue(n),
-        lambda: git.delete_remote_branch(cfg.root, job["branch"]),
         *t.effects,
-        lambda: git.delete_local_branch(cfg.root, job["branch"]),
     ]
     return apply(ctx, job, t)
 

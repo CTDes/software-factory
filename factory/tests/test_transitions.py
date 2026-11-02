@@ -340,6 +340,8 @@ class HumanTransitions(FactoryTestCase):
         self.assertEqual(job.stage, "done")
         self.assertFalse(job.worktree.exists())
         self.assertEqual(self.labels(12), [])
+        self.assertNotIn(job["branch"], self.remote_branches())
+        self.assertNotIn(job["branch"], self.git(self.root, "branch", "--list"))
 
     def test_needs_human_to_done_when_pr_merged(self) -> None:
         job = self.to_gate()
