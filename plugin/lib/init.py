@@ -211,6 +211,8 @@ Next steps:
      docs/architecture.md; add your existing tests to protected_paths in factory/config.json.
   3. Commit, push, and make the `checks` workflow a required check on {base}.
   4. Label an issue `ready-for-agent` and run /software-factory:factory run.
+New project? Start with /software-factory:grilling and /software-factory:to-roadmap
+instead: steps 1-3 become its milestone 0 (see the README, "Two ways to work").
 """
 
 

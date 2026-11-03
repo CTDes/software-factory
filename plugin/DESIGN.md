@@ -681,6 +681,14 @@ before it was applied.
   (milestones, one spec each, walking skeleton first) and updates it after each milestone.
   `to-spec` reads it. The README documents the two ways to work: roadmap → specs for a new
   project, issues for an existing one.
+- 0.5.1, the files a new project starts with:
+  - The `GLOSSARY.md` template uses `domain-modeling`'s format (`**Term**:` / `_Avoid_:`)
+    instead of a table, so the skill does not mix two formats.
+  - `to-roadmap` offers to fill `CLAUDE.md` and `docs/architecture.md` from what was decided;
+    the glossary and ADRs stay with `domain-modeling`.
+  - Roadmaps start with a milestone 0 built by hand: scaffold, the real `factory/checks.sh` and
+    CI. The factory cannot build it, because `factory/**` and `.github/**` are protected and the
+    gate judges with the base branch's `checks.sh`.
 
 ## References
 

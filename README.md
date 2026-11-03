@@ -73,9 +73,8 @@ See [`plugin/README.md`](plugin/README.md) for the details, every command and ho
 For something bigger than one PR. The human's work goes into thinking up front and testing at
 the end; the factory builds everything in between.
 
-1. **Prepare the repo** with `factory-init --labels` and the quick start above. In a new project,
-   `factory/checks.sh` may only grow real checks with milestone 1. That is fine, but keep it
-   honest: it is the only judge the factory has.
+1. **Prepare the repo** with `factory-init --labels`. In a new project there is nothing to check
+   yet: the real `factory/checks.sh` comes with milestone 0 (step 4).
 2. **Grill the whole project:** `/software-factory:grilling`, saying it is about the project, not
    a feature: vision, users, MVP scope, what is out, rough architecture, technical risks.
    Record hard-to-reverse decisions as ADRs and the vocabulary in `GLOSSARY.md` with
@@ -83,8 +82,14 @@ the end; the factory builds everything in between.
 3. **Roadmap:** `/software-factory:to-roadmap`, in the same conversation, writes
    `docs/roadmap.md`: ordered milestones, each testable by a human on its own and sized for one
    spec (about 4–10 tickets). Milestone 1 is a walking skeleton, the riskiest work comes next.
-   Commit it.
-4. **For each milestone, in order:**
+   It also offers to fill `CLAUDE.md` and `docs/architecture.md` with what was decided, since
+   the agents start every job knowing only what the repo says. Commit them.
+4. **Milestone 0, by hand:** the stack's minimal scaffold, a `factory/checks.sh` that runs the
+   real lint, typecheck, tests and build, and the `checks` workflow as a required check, merged
+   to the base branch. The factory cannot do this one: `factory/**` and `.github/**` are
+   protected paths, and the gate always judges with the base branch's `checks.sh`. Keep it
+   honest: it is the only judge the factory has.
+5. **For each factory milestone, in order:**
    1. `/software-factory:grilling` on the milestone (short, feature level). If the milestone is
       still foggy (unknown APIs, an unsettled data model, something that needs a prototype),
       resolve those decisions first, one session each, before writing its spec. Matt Pocock's
@@ -116,7 +121,7 @@ For bugs, small features and refactors in a codebase that already works and has 
    `/software-factory:factory rework <n>`.
 
 When a change in an existing project is too big for one PR, use a single spec for it (steps
-4.1–4.6 of the new-project flow). Use a roadmap only when it needs several specs.
+5.1–5.6 of the new-project flow). Use a roadmap only when it needs several specs.
 
 ## Skills for the human
 
