@@ -194,8 +194,13 @@ def read_review(path: Path, security: bool) -> Document:
 
 # ---------------------------------------------------------------- evidence (build.md)
 
+# `C1: path::name`, `` C1: `path::name` `` or, for test names with spaces (node:test, pytest
+# ids…), `` C1: path::`name with spaces` ``; then an optional ` — what it proves`.
 EVIDENCE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?P<id>C\d+):\s*`?(?P<path>[^\s`]+?)::(?P<name>[^\s`]+)`?"
+    r"^\s*(?:[-*]\s*)?(?P<id>C\d+):\s*"
+    r"(?:`(?P<path1>[^\s`]+?)::(?P<name1>[^\s`]+)`"
+    r"|(?P<path2>[^\s`]+?)::`(?P<name2>[^`]+)`"
+    r"|(?P<path3>[^\s`]+?)::(?P<name3>[^\s`]+))"
     r"(?:\s+(?:\u2014|\u2013|-{1,2})\s+(?P<desc>.+))?\s*$"
 )
 
@@ -217,7 +222,8 @@ def parse_evidence(text: str) -> tuple[list[Evidence], list[str]]:
             continue
         m = EVIDENCE_RE.match(line)
         if m:
-            found.append(Evidence(m.group("id"), m.group("path"), m.group("name"), i))
+            n = next(k for k in "123" if m.group(f"path{k}"))
+            found.append(Evidence(m.group("id"), m.group(f"path{n}"), m.group(f"name{n}"), i))
         else:
             bad.append(line.strip())
     return found, bad

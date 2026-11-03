@@ -42,8 +42,10 @@ same applies to the parent spec's `issue.md` if you are given it.
   buildable (for example, another piece changed an interface it depends on), answer NEEDS-INFO
   explaining the conflict.
 
-Acceptance criteria: each one checkable by an automated test, numbered `C1`, `C2`…, with no
-implementation. Seams: existing public interfaces or ones described in `docs/architecture.md`,
+Acceptance criteria: each one checkable by a new or changed automated test, numbered `C1`,
+`C2`…, with no implementation. Never write a criterion the gate already guarantees, such as
+"existing tests still pass" or "checks.sh is green": it has no test of its own and forces the
+builder to invent one. Seams: existing public interfaces or ones described in `docs/architecture.md`,
 as high as possible; say where the tests will live. Risk: `low` (local, no interface change),
 `medium` (changes or adds a public interface), `high` (data, security, several pieces). Surfaces:
 short lowercase tags (`ui`, `api`, `security`, …) or `none`; set `security` if the change touches

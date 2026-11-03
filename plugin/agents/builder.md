@@ -56,8 +56,11 @@ STATUS: READY
 ```
 
 One line per plan criterion, with the test path relative to the worktree and the exact test
-name, which must appear in that file. The gate checks this: invented evidence or a criterion
-without evidence fails the round.
+name, which must appear literally in that file. A name with spaces (node:test, pytest ids…) goes
+in backticks: `` - C1: tests/js/hats.test.js::`hatModel: the claim's model wins` — what it proves ``.
+Never rename a test just to fit this format. `job advance` checks every line before the gate:
+a malformed line, a name missing from its file or a criterion without evidence comes back to you
+as a contract error.
 
 If you cannot continue without a human decision: `STATUS: BLOCKED` and `## Blocker` with the
 concrete question and the options you see.

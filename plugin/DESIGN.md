@@ -202,7 +202,7 @@ the base counts as a contract failure too.
 | --- | --- | --- |
 | `issue.md` | written by `factory-job`: title, author, URL | Issue body and comments inside a block delimited by `<<<ISSUE` and `ISSUE>>>`, with a notice that it is data |
 | `plan.md` | `DECISION: ACCEPT\|NEEDS-INFO\|REJECT`, `RISK: low\|medium\|high`, `SURFACES: a, b` (or `none`) | `## Scope`, `## Acceptance criteria` (C1, C2… testable), `## Seams` (where the tests live), `## Notes`. With NEEDS-INFO: `## Question`. With REJECT: `## Reason` |
-| `build.md` | `STATUS: READY\|BLOCKED` | `## Evidence`: one line per criterion, `C1: <test path>::<name> — what it proves`. With BLOCKED: `## Blocker` |
+| `build.md` | `STATUS: READY\|BLOCKED` | `## Evidence`: one line per criterion, `C1: <test path>::<name> — what it proves`; a name with spaces goes in backticks, `` C1: <path>::`<name with spaces>` ``. `job advance` checks every line (format, name present in its file, every plan criterion covered) before the gate: a problem is a contract failure, not a gate round. With BLOCKED: `## Blocker` |
 | `round-N/checks.md` | `GATE: PASS\|FAIL`, `PROTECTED: none` or the list of paths touched | Command, duration, missing evidence and the last `log_tail_lines` lines |
 | `round-N/review.md` | `VERDICT: PASS\|CHANGES` | `## Standards`, `## Spec`, `## Architecture` and, when the `security` surface is set, `## Security`. Each finding with file, line and whether it blocks |
 | `round-N/merge.md` | `MERGE: CONFLICT\|GATE-FAIL`, written by `factory-job merge` | Conflicting files or the gate log after integrating the base |
@@ -661,6 +661,15 @@ before it was applied.
 - 0.4.0, `factory-job office link <token>` replaces per-machine environment variables as the way
   to connect: the office has a single token and each repository opts in. The variables remain
   for CI. `events status|flush|backfill` became `office status|flush|backfill`.
+- 0.4.1, after factory-office's first job spent two gate rounds on evidence its checks never saw:
+  - Evidence names may contain spaces inside backticks (node:test names); before, those lines
+    were malformed and the builder had to rename tests.
+  - `job advance` from build runs the gate's evidence check, so bad evidence goes back to the
+    builder as a contract failure instead of costing a round.
+  - The planner may not write criteria the gate already guarantees ("existing tests still
+    pass", "checks.sh is green"); one such criterion forced the builder to invent a test.
+  - The reviewer prompt lists the job's surfaces and says whether a security review is required,
+    instead of "Security surface: not set", which read as a contradiction of `surfaces=ui`.
 
 ## References
 

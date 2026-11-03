@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from lib import contracts, git, prompts
+from lib import contracts, gate, git, prompts
 from lib import issue as issue_md
 from lib.config import Config
 from lib.github import GitHub
@@ -335,6 +335,15 @@ def _from_build(ctx: Ctx, job: Job) -> Transition:
             job.file("build.md"),
             1,
             f"STATUS: READY but there are no commits on top of origin/{job['base']}",
+        )
+    # Evidence the gate would reject is a contract failure here: it goes back to the builder
+    # once instead of spending a gate round.
+    problems = gate.check_evidence(job, wt)
+    if problems:
+        raise contracts.ContractError(
+            job.file("build.md"),
+            None,
+            "evidence the gate would reject:\n" + "\n".join(f"- {p}" for p in problems),
         )
 
     new_round = int(job["round"]) + 1

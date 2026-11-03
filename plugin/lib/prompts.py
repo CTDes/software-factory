@@ -72,7 +72,7 @@ def review(job: Job, final: bool = False) -> str:
 - Commits: `cd {job.worktree} && git log --oneline {base}..HEAD`
 - Plan: {plan_path(job)}
 - Builder report: {job.file("build.md") if job.file("build.md").exists() else "(none: first final review)"}
-- Security surface: {"SET, include ## Security" if security else "not set"}
+- Surfaces: {", ".join(job.get("surfaces") or []) or "none"} · security review: {"required, include ## Security" if security else "not required (no `security` surface)"}
 - Output: {job.round_dir() / "review.md"}
 
 Write review.md following your instructions and answer with a single line."""
