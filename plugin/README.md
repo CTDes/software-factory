@@ -39,8 +39,17 @@ to labels):
 
 - `/software-factory:factory run` drains every labelled issue and spec.
 - `/software-factory:factory issue <n>`, `spec <n>`, `rework <n>`, `status`.
-- Human skills: `/software-factory:to-spec`, `/software-factory:to-tickets`,
-  `/software-factory:grilling`, `/software-factory:domain-modeling`, `/software-factory:retro`.
+- Human skills: `/software-factory:to-roadmap`, `/software-factory:to-spec`,
+  `/software-factory:to-tickets`, `/software-factory:grilling`,
+  `/software-factory:domain-modeling`, `/software-factory:retro`.
+
+Two ways to work, step by step, in the [repository README](../README.md#two-ways-to-work):
+
+- **New project:** grilling about the whole project → `to-roadmap` (`docs/roadmap.md`, one
+  milestone per spec) → for each milestone: grilling → `to-spec` → `to-tickets` → approve with the
+  queue label → `factory spec <n>` → test and merge the PR → `retro` and `to-roadmap update`.
+- **Existing project:** write issues, label them `ready-for-agent`, `factory issue <n>` or
+  `factory run`, review and merge each PR.
 
 ## Office (optional)
 

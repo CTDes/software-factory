@@ -58,6 +58,7 @@ plugin software-factory/                (installed under ~/.claude/plugins/cache
   agents/planner.md, builder.md, reviewer.md   →  software-factory:planner, :builder, :reviewer
   skills/factory/SKILL.md                orchestrator /software-factory:factory
   skills/tdd, code-review, grilling, domain-modeling, to-spec, to-tickets, retro   (Matt Pocock, MIT)
+  skills/to-roadmap                      project → docs/roadmap.md (milestones, one spec each)
   hooks/hooks.json, agent_guard.py       agent guardrails (PreToolUse, by agent_type)
   bin/factory-job                        state machine; the only thing with effects on the remote and GitHub
   bin/factory-gate                       runs checks.sh, checks protected paths and evidence
@@ -495,6 +496,11 @@ attribution line: `tdd`, `code-review`, `grilling`, `domain-modeling`, `to-spec`
   to approve it.
 - `to-tickets` writes in each child the `Parent: #<spec>` and `Blocked by: #a, #b` lines that
   `factory-job` parses, without labelling them.
+- `to-spec` reads `docs/roadmap.md`, when it exists, to keep a spec within its milestone.
+
+`to-roadmap` is the factory's own: it turns a project-level conversation into
+`docs/roadmap.md`, ordered milestones that are each testable by a human and sized for one spec.
+It touches no GitHub state: a milestone becomes an issue only when its spec is written.
 
 ### Guardrails and permissions
 
@@ -670,6 +676,11 @@ before it was applied.
     pass", "checks.sh is green"); one such criterion forced the builder to invent a test.
   - The reviewer prompt lists the job's surfaces and says whether a security review is required,
     instead of "Security surface: not set", which read as a contradiction of `surfaces=ui`.
+- 0.5.0, `to-roadmap` skill: the factory had no step between "a project" and "a spec", so large
+  projects were either crammed into one spec or split by hand. It writes `docs/roadmap.md`
+  (milestones, one spec each, walking skeleton first) and updates it after each milestone.
+  `to-spec` reads it. The README documents the two ways to work: roadmap → specs for a new
+  project, issues for an existing one.
 
 ## References
 

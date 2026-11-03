@@ -66,10 +66,63 @@ Then:
 factory section to an existing `CLAUDE.md`, and warns about existing CI workflows and labels.
 See [`plugin/README.md`](plugin/README.md) for the details, every command and how updates work.
 
+## Two ways to work
+
+### New project: roadmap → specs
+
+For something bigger than one PR. The human's work goes into thinking up front and testing at
+the end; the factory builds everything in between.
+
+1. **Prepare the repo** with `factory-init --labels` and the quick start above. In a new project,
+   `factory/checks.sh` may only grow real checks with milestone 1. That is fine, but keep it
+   honest: it is the only judge the factory has.
+2. **Grill the whole project:** `/software-factory:grilling`, saying it is about the project, not
+   a feature: vision, users, MVP scope, what is out, rough architecture, technical risks.
+   Record hard-to-reverse decisions as ADRs and the vocabulary in `GLOSSARY.md` with
+   `/software-factory:domain-modeling`.
+3. **Roadmap:** `/software-factory:to-roadmap`, in the same conversation, writes
+   `docs/roadmap.md`: ordered milestones, each testable by a human on its own and sized for one
+   spec (about 4–10 tickets). Milestone 1 is a walking skeleton, the riskiest work comes next.
+   Commit it.
+4. **For each milestone, in order:**
+   1. `/software-factory:grilling` on the milestone (short, feature level). If the milestone is
+      still foggy (unknown APIs, an unsettled data model, something that needs a prototype),
+      resolve those decisions first, one session each, before writing its spec. Matt Pocock's
+      [`wayfinder`](https://github.com/mattpocock/skills/tree/main/skills/engineering/wayfinder)
+      skill is built for that; it is not bundled with this plugin.
+   2. `/software-factory:to-spec` publishes the spec issue with the `spec` label.
+   3. `/software-factory:to-tickets` publishes the child tickets with `Parent:` / `Blocked by:`.
+   4. Review the graph, then add `ready-for-agent` to the spec **and** every child. That is the
+      approval.
+   5. `/software-factory:factory spec <n>`. Answer `needs-info` questions on the issues; fix
+      `ready-for-human` escalations with a comment and `/software-factory:factory rework <n>`.
+   6. Test the final `spec/<id>` PR by hand and merge it.
+   7. `/software-factory:retro` to improve `CLAUDE.md`, `checks.sh` and the context files, then
+      `/software-factory:to-roadmap update` to mark the milestone done and re-plan the rest.
+
+### Existing project: issues
+
+For bugs, small features and refactors in a codebase that already works and has real checks.
+
+1. **Prepare the repo** with `factory-init --labels`. It never overwrites anything. Make sure
+   `factory/checks.sh` runs your real lint, typecheck, tests and build and passes on the base
+   branch, add your existing tests to `protected_paths`, and fill in `CLAUDE.md` and
+   `GLOSSARY.md` so the agents know the conventions.
+2. **Write issues** as you would for a colleague: what to change and how to know it works. One
+   issue is one PR. If the issue is fuzzy, `/software-factory:grilling` it first.
+3. **Queue them:** add `ready-for-agent`. Start with `/software-factory:factory issue <n>` on one
+   or two issues to build trust, then `/software-factory:factory run` to drain the queue.
+4. **Review and merge** each PR in `ready-for-human`. Ask for changes with PR comments and
+   `/software-factory:factory rework <n>`.
+
+When a change in an existing project is too big for one PR, use a single spec for it (steps
+4.1–4.6 of the new-project flow). Use a roadmap only when it needs several specs.
+
 ## Skills for the human
 
 | Skill | Use |
 | --- | --- |
+| `/software-factory:to-roadmap` | Turn a project-level conversation into `docs/roadmap.md`: milestones, one spec each |
 | `/software-factory:to-spec` | Turn a conversation into a spec issue |
 | `/software-factory:to-tickets` | Break an approved spec into child tickets with `Parent:` / `Blocked by:` |
 | `/software-factory:grilling` | Stress-test a plan or idea |
@@ -78,7 +131,7 @@ See [`plugin/README.md`](plugin/README.md) for the details, every command and ho
 
 `tdd`, `code-review`, `grilling`, `domain-modeling`, `to-spec`, `to-tickets` and `retro` are
 adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill folder
-keeps its license.
+keeps its license. `to-roadmap` and `factory` are this repository's own.
 
 ## This repository
 

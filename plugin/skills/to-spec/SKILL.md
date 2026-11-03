@@ -4,7 +4,7 @@ description: "Turn the current conversation into a spec and publish it to the pr
 disable-model-invocation: true
 ---
 
-> Copied from [mattpocock/skills](https://github.com/mattpocock/skills/tree/4ae2317/skills/engineering/to-spec) @ 4ae2317, MIT License (see `LICENSE` in this folder), © 2026 Matt Pocock. Adapted for the software factory: tracker → GitHub; publishes with `spec` label only, never the queue label.
+> Copied from [mattpocock/skills](https://github.com/mattpocock/skills/tree/4ae2317/skills/engineering/to-spec) @ 4ae2317, MIT License (see `LICENSE` in this folder), © 2026 Matt Pocock. Adapted for the software factory: tracker → GitHub; publishes with `spec` label only, never the queue label; reads `docs/roadmap.md` when a spec builds a milestone.
 
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
@@ -12,7 +12,7 @@ This repo uses **GitHub issues** through the `gh` CLI. The label vocabulary live
 
 ## Process
 
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching. If `docs/roadmap.md` exists and this spec builds one of its milestones, stay within that milestone's scope (what doesn't fit goes to Out of Scope) and name the milestone in Further Notes.
 
 2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
