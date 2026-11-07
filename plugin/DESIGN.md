@@ -263,7 +263,8 @@ marker).
 Links are relative markdown links (Quartz, Obsidian and GitHub all follow them); `#n` outside
 code becomes a link to that issue's note. Issue text and job records may carry HTML from outside:
 every `<` outside code is escaped, and link targets with a `javascript:`, `vbscript:` or `data:`
-scheme are defused. The generator only reads.
+scheme are defused. A relative link from a document to a repository file outside the wiki
+(`LICENSE`, code, another README) points at that file on GitHub at the commit built from. The generator only reads.
 
 ### Wiki publishing
 

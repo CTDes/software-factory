@@ -180,6 +180,42 @@ class DocsAndHistory(VaultTestCase):
         self.assertIn("**Status:** closed", self.note("tickets/26.md"))
 
 
+class DocLinks(VaultTestCase):
+    def test_links_to_repository_files_point_at_the_source(self) -> None:
+        self.write(
+            self.root,
+            "README.md",
+            "[license](LICENSE) [design](plugin/DESIGN.md#jobs) [arch](docs/architecture.md)\n"
+            "[adr](docs/adr/) [web](https://example.org) [top](#x) `[code](LICENSE)`\n",
+        )
+        self.write(self.root, "docs/architecture.md", "[up](../README.md) [mod](../mod.py)\n")
+        self.write(self.root, "docs/adr/0001-x.md", "# x\n")
+        vault.build(
+            self.cfg, self.gh.all_issues(), self.gh.all_prs(), self.out, source_url="https://src"
+        )
+        readme = self.note("README.md")
+        self.assertIn("[license](https://src/LICENSE)", readme)
+        self.assertIn("[design](https://src/plugin/DESIGN.md#jobs)", readme)
+        self.assertIn("[arch](docs/architecture.md)", readme)
+        self.assertIn("[adr](docs/adr/)", readme)
+        self.assertIn("[web](https://example.org) [top](#x) `[code](LICENSE)`", readme)
+        arch = self.note("docs/architecture.md")
+        self.assertIn("[up](../README.md) [mod](https://src/mod.py)", arch)
+
+    def test_github_source_from_origin(self) -> None:
+        self.git(self.root, "remote", "set-url", "origin", "git@github.com:CTDes/textkit.git")
+        sha = self.git(self.root, "rev-parse", "HEAD").strip()
+        self.assertEqual(
+            vault.github_source(self.cfg), f"https://github.com/CTDes/textkit/blob/{sha}"
+        )
+        self.git(self.root, "remote", "set-url", "origin", "git@github.com-work:CTDes/textkit.git")
+        self.assertEqual(
+            vault.github_source(self.cfg), f"https://github.com/CTDes/textkit/blob/{sha}"
+        )
+        self.git(self.root, "remote", "set-url", "origin", "/tmp/elsewhere.git")
+        self.assertIsNone(vault.github_source(self.cfg))
+
+
 class Cli(VaultTestCase):
     def test_cli_builds_the_vault(self) -> None:
         res = self.run_cli("job", "vault", str(self.out), "--title", "Demo")

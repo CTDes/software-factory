@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -503,16 +504,59 @@ def _prepare(out: Path) -> None:
     (out / MARKER).write_text("made by factory-job vault; rebuilt from scratch each time\n")
 
 
+_DOC_LINK = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
+
+
+def relink_docs(note: str, text: str, notes: set[str], source_url: str | None) -> str:
+    """A relative link from a document to a repository file the wiki does not have (LICENSE,
+    code, other READMEs) points at that file in the repository instead of a missing page."""
+    if not source_url:
+        return text
+    folders = {posixpath.dirname(n) for n in notes}
+
+    def fix(m: re.Match[str]) -> str:
+        target = m.group(2)
+        if re.match(r"^[a-zA-Z][\w+.-]*:", target) or target.startswith(("#", "/")):
+            return m.group(0)
+        path, _, anchor = target.partition("#")
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(note), path))
+        if resolved.startswith("..") or resolved in notes or resolved.rstrip("/") in folders:
+            return m.group(0)
+        if f"{resolved}.md" in notes:
+            return m.group(0)
+        url = f"{source_url}/{resolved}" + (f"#{anchor}" if anchor else "")
+        return f"{m.group(1)}{url}{m.group(3)}"
+
+    return _outside_code(text, lambda part: _DOC_LINK.sub(fix, part))
+
+
+def github_source(cfg: Config) -> str | None:
+    """https://github.com/<owner>/<name>/blob/<HEAD sha>, when origin is on GitHub."""
+    try:
+        remote = git.git(cfg.root, "remote", "get-url", "origin").strip()
+    except Exception:
+        return None
+    # https://github.com/o/r, git@github.com:o/r.git and ssh host aliases (git@github.com-work:o/r)
+    m = re.search(r"github\.com[^:/]*[:/]([^/]+)/([^/]+?)(?:\.git)?/?$", remote)
+    sha = git.rev_parse(cfg.root, "HEAD")
+    return f"https://github.com/{m.group(1)}/{m.group(2)}/blob/{sha}" if m and sha else None
+
+
 def build(
     cfg: Config,
     issues: list[Issue],
     prs: list[PullSummary],
     out: Path,
     title: str | None = None,
+    source_url: str | None = None,
 ) -> list[str]:
-    """Write the wiki into `out` (replacing a previous one). Returns the note paths written."""
+    """Write the wiki into `out` (replacing a previous one). Returns the note paths written.
+
+    `source_url` (default: the GitHub blob URL of HEAD, if any) is where links from documents to
+    repository files outside the wiki point."""
     v = collect(cfg, issues, prs, title or cfg.root.name)
     sha = (git.rev_parse(cfg.root, "HEAD") or "unknown")[:12]
+    source_url = source_url if source_url is not None else github_source(cfg)
     _prepare(out)
     notes: dict[str, str] = {
         "index.md": render_index(v, sha),
@@ -523,8 +567,10 @@ def build(
     history_dir = str(cfg.data.get("history_dir") or "").strip("/")
     for note in v.histories:
         notes[note] = render_history(v, note, cfg.root / history_dir / note.split("/", 1)[1])
+    all_notes = set(notes) | set(v.docs)
     for note, src in v.docs.items():
-        notes[note] = _linkify(v, note, src.read_text(encoding="utf-8", errors="replace"))
+        text = _linkify(v, note, src.read_text(encoding="utf-8", errors="replace"))
+        notes[note] = relink_docs(note, text, all_notes, source_url)
     for note, text in notes.items():
         path = out / note
         path.parent.mkdir(parents=True, exist_ok=True)
