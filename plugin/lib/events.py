@@ -15,6 +15,7 @@ Files, all under ``factory/jobs/_events/`` (gitignored with factory/jobs/):
   outbox.lock    held while the outbox is appended to or rewritten
   flush.lock     held by the one process that is flushing
   backoff        timestamp of the last failed automatic flush
+  wiki-*         wiki publishing state (lib/wiki.py)
 """
 
 from __future__ import annotations

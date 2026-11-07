@@ -30,6 +30,10 @@ class Sink:
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 body = self.rfile.read(int(self.headers["Content-Length"]))
+                if not self.path.endswith("/events"):  # e.g. the wiki upload (test_wiki.py)
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 if sink.token and self.headers.get("Authorization") != f"Bearer {sink.token}":
                     self.send_response(401)
                     self.end_headers()

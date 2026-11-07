@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from lib import config, events, gate, history, jobs, machine, vault
+from lib import config, events, gate, history, jobs, machine, vault, wiki
 from lib.github import connect
 from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, FactoryError, UsageError
 
@@ -103,7 +103,7 @@ def job_main(argv: Sequence[str] | None = None) -> int:
     va.add_argument("out", help="folder to (re)build; must be empty or a previous vault")
     va.add_argument("--title", help="wiki title (default: the repository folder name)")
     of = sub.add_parser("office", help="link this repository to a factory-office")
-    of.add_argument("subcmd", choices=["link", "unlink", "status", "flush", "backfill"])
+    of.add_argument("subcmd", choices=["link", "unlink", "status", "flush", "backfill", "wiki"])
     of.add_argument("token", nargs="?", help="the office token (link only)")
     of.add_argument("--url", help=f"the office (default {events.DEFAULT_OFFICE})")
     args = p.parse_args(argv)
@@ -192,6 +192,8 @@ def _auto_flush() -> None:
         cfg = config.load()
         if events.sink(cfg) is not None:
             events.flush(cfg, automatic=True)
+            if wiki.is_dirty(cfg):
+                wiki.publish(cfg, connect(cfg.root), automatic=True)
     except Exception:
         pass
 
@@ -212,7 +214,12 @@ def _office_main(subcmd: str, token: str | None, url: str | None) -> int:
         cfg = config.load()
         if subcmd == "status":
             print("\n".join(events.status(cfg)))
+            print(wiki.status_line(cfg))
             return EXIT_OK
+        if subcmd == "wiki":
+            published = wiki.publish(cfg, connect(cfg.root))
+            print(published.line())
+            return EXIT_CONDITION if published.error or published.skipped else EXIT_OK
         if subcmd == "unlink":
             print(events.unlink(cfg))
             return EXIT_OK
@@ -221,6 +228,7 @@ def _office_main(subcmd: str, token: str | None, url: str | None) -> int:
                 raise UsageError("usage: factory-job office link <token> [--url URL]")
             for line in events.link(cfg, token, url, [j.data for j in jobs.all_jobs(cfg)]):
                 print(line)
+            print(wiki.publish(cfg, connect(cfg.root)).line())
         elif subcmd == "backfill":
             print(
                 f"history: queued {events.backfill(cfg, [j.data for j in jobs.all_jobs(cfg)])} events"

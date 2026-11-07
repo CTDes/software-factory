@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from lib import events
+from lib import events, wiki
 from lib.config import Config
 from lib.util import FactoryError, atomic_write, now, slugify
 
@@ -95,6 +95,7 @@ class Job:
         with self.file("events.log").open("a", encoding="utf-8") as fh:
             fh.write(f"{ts}\t{frm}\t{to}\t{reason}\n")
         events.record(self.cfg, self.data, ts, frm, to, reason)
+        wiki.mark_dirty(self.cfg, to)
 
 
 def new_ticket(cfg: Config, issue: dict[str, Any], spec: Job | None = None) -> Job:

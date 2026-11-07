@@ -262,8 +262,24 @@ marker).
 
 Links are relative markdown links (Quartz, Obsidian and GitHub all follow them); `#n` outside
 code becomes a link to that issue's note. Issue text and job records may carry HTML from outside:
-every `<` outside code is escaped. The generator only reads; it is meant to run in CI and publish
-the result (see factory-office).
+every `<` outside code is escaped. The generator only reads.
+
+### Wiki publishing
+
+The factory-office builds the site (Quartz) and serves it behind its token; the factory only
+sends the vault, wherever its events go (`link.json` or `FACTORY_EVENTS_URL`), so a laptop and a
+CI job publish the same way and the office never needs GitHub credentials (`lib/wiki.py`).
+
+- Contract: `POST <office>/wiki?repo=<owner/name>`, `Content-Type: application/gzip`, body a
+  tar.gz of the vault (regular files only, relative paths, mode 644), `Authorization: Bearer
+  <office token>`. Any 2xx means accepted; the office replaces that repository's wiki.
+- Every transition writes `factory/jobs/_events/wiki-dirty` (`urgent` for `ready`, `done`,
+  `needs-human`, `needs-info`, `rejected`; else `normal`, never downgrading an urgent mark).
+- At the end of every factory-job command, after the event flush, a dirty wiki is rebuilt
+  (two `gh` list calls) and sent: urgent at once, normal at most every 120 s. A failure keeps the
+  mark and pauses automatic publishing for 60 s. It never changes a command's outcome.
+- `factory-job office wiki` publishes now; `office link` publishes once after linking;
+  `office status` shows when it was last published.
 
 ## State machines
 
@@ -361,6 +377,7 @@ condition not met or illegal transition, 2 usage or configuration error.
 | `vault <out> [--title T]` | Builds the project wiki in `<out>` (see Wiki) |
 | `history [<id\|issue>…]` | Writes `<history_dir>/<job-id>.md` into the main checkout, uncommitted (backfill; default: every job with a PR) |
 | `office link <token> [--url URL]` | Link this repository to a factory-office (see Events): check the office accepts the token, save the link, send the history |
+| `office wiki` | Build the wiki and send it to the office now (see Wiki publishing) |
 | `office status\|unlink\|flush\|backfill` | Show where events go and whether the office answers; forget the link; send the outbox now; send every job's `events.log` again |
 
 `job next` is what keeps the orchestrator dumb. It builds each agent's prompt from a template in
@@ -793,6 +810,10 @@ before it was applied.
   over the repository, GitHub and the job folders, with nothing to browse them as a whole. The
   vault joins them into linked notes (see Wiki) that Obsidian opens and Quartz publishes. The
   GitHub adapter gains `all_issues` and `all_prs` (open and closed) for it.
+- 0.9.0, wiki publishing: the plan was a GitHub Action that builds Quartz and uploads the site,
+  but the office runs on the user's machine (127.0.0.1), out of reach of GitHub's runners. The
+  office builds Quartz instead and factory-job sends it the vault after transitions, through the
+  same link as events. Once the office is on a public host, a CI job can send the same upload.
 
 ## References
 
