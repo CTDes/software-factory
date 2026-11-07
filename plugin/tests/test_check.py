@@ -21,8 +21,8 @@ LABELS = ["ready-for-agent", "spec", "needs-info", "ready-for-human", "factory:w
 REAL_CHECKS = "#!/usr/bin/env bash\nset -euo pipefail\npython3 -m unittest\n"
 
 
-def git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+def git(cwd: Path, env: dict[str, str], *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
 
 
 class VersionTest(unittest.TestCase):
@@ -55,7 +55,7 @@ class CheckTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.origin)], check=True)
         self.repo = tmp / "repo"
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
-        git(self.repo, "remote", "add", "origin", str(self.origin))
+        git(self.repo, self.env, "remote", "add", "origin", str(self.origin))
         self.gh: dict[str, Any] = {
             "auth": True,
             "repo": {"nameWithOwner": "me/app", "viewerPermission": "WRITE"},
@@ -117,9 +117,9 @@ else:
         (self.repo / "factory" / "checks.sh").write_text(text)
 
     def publish_base(self) -> None:
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "setup")
-        git(self.repo, "push", "-q", "origin", "main")
+        git(self.repo, self.env, "add", "-A")
+        git(self.repo, self.env, "commit", "-q", "-m", "setup")
+        git(self.repo, self.env, "push", "-q", "origin", "main")
 
     def run_check(self) -> subprocess.CompletedProcess[str]:
         self.write_fake_gh()
