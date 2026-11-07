@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from lib import config, events, gate, history, jobs, machine
+from lib import config, events, gate, history, jobs, machine, vault
 from lib.github import connect
 from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, FactoryError, UsageError
 
@@ -99,6 +99,9 @@ def job_main(argv: Sequence[str] | None = None) -> int:
         "history", help="write docs/history/<job>.md into this checkout (backfill, uncommitted)"
     )
     hi.add_argument("refs", nargs="*", metavar="id|issue", help="default: every job with a PR")
+    va = sub.add_parser("vault", help="build the project wiki (Obsidian vault / Quartz content)")
+    va.add_argument("out", help="folder to (re)build; must be empty or a previous vault")
+    va.add_argument("--title", help="wiki title (default: the repository folder name)")
     of = sub.add_parser("office", help="link this repository to a factory-office")
     of.add_argument("subcmd", choices=["link", "unlink", "status", "flush", "backfill"])
     of.add_argument("token", nargs="?", help="the office token (link only)")
@@ -153,6 +156,13 @@ def job_main(argv: Sequence[str] | None = None) -> int:
             print("\n\n".join(_status(j) for j in targets) or "no jobs")
         elif args.cmd == "summary":
             print(_summary(cfg))
+        elif args.cmd == "vault":
+            from pathlib import Path
+
+            notes = vault.build(
+                cfg, ctx.gh.all_issues(), ctx.gh.all_prs(), Path(args.out).resolve(), args.title
+            )
+            print(f"vault: {len(notes)} notes in {args.out}")
         elif args.cmd == "history":
             targets = (
                 [jobs.resolve(cfg, r) for r in args.refs]

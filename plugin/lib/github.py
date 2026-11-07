@@ -24,6 +24,10 @@ from lib.util import CommandError, UsageError, now, run
 Issue = dict[str, Any]
 PR = dict[str, Any]
 Comment = dict[str, Any]
+# For the wiki (lib/vault.py): every PR, open or closed, without comments.
+#   PullSummary = {"number", "title", "url", "head", "base", "body", "draft": bool,
+#                  "state": "OPEN"|"CLOSED"|"MERGED"}
+PullSummary = dict[str, Any]
 
 
 class GitHub(Protocol):
@@ -38,6 +42,8 @@ class GitHub(Protocol):
     def mark_ready(self, number: int) -> None: ...
     def pr(self, number: int) -> PR: ...
     def find_pr(self, head: str) -> PR | None: ...
+    def all_issues(self) -> list[Issue]: ...
+    def all_prs(self) -> list[PullSummary]: ...
 
 
 def connect(root: Path) -> GitHub:
@@ -214,6 +220,34 @@ class GhCli:
         rows = self._json("pr", "list", "--head", head, "--state", "all", "--json", "number")
         return self.pr(int(rows[0]["number"])) if rows else None
 
+    def all_issues(self) -> list[Issue]:
+        return self._list("--state", "all")
+
+    def all_prs(self) -> list[PullSummary]:
+        rows = self._json(
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--limit",
+            "1000",
+            "--json",
+            "number,title,url,state,isDraft,headRefName,baseRefName,body",
+        )
+        return [
+            {
+                "number": d["number"],
+                "title": d["title"],
+                "url": d["url"],
+                "head": d["headRefName"],
+                "base": d["baseRefName"],
+                "body": d.get("body") or "",
+                "draft": bool(d["isDraft"]),
+                "state": d["state"],
+            }
+            for d in rows
+        ]
+
 
 # ---------------------------------------------------------------- fake: JSON fixtures
 
@@ -355,3 +389,25 @@ class FakeGitHub:
             if d["head"] == head:
                 return self.pr(int(d["number"]))
         return None
+
+    def all_issues(self) -> list[Issue]:
+        state = self.load()
+        return [self.issue(int(n)) for n in sorted(state["issues"], key=int)]
+
+    def all_prs(self) -> list[PullSummary]:
+        out = []
+        for n in sorted(self.load()["prs"], key=int):
+            d = self.pr(int(n))
+            out.append(
+                {
+                    "number": d["number"],
+                    "title": d.get("title", ""),
+                    "url": d.get("url", ""),
+                    "head": d["head"],
+                    "base": d["base"],
+                    "body": d.get("body", ""),
+                    "draft": bool(d.get("draft")),
+                    "state": d.get("state", "OPEN"),
+                }
+            )
+        return out

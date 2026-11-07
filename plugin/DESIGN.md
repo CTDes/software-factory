@@ -243,6 +243,28 @@ and the builder never edits it.
 `factory-job history [<id|issue>…]` writes the same file into the main checkout, uncommitted,
 for jobs that finished before this existed (by default every job with a PR).
 
+### Wiki
+
+`factory-job vault <out> [--title T]` builds the project wiki: a folder of linked markdown notes
+that is at once an Obsidian vault and the `content/` folder of a Quartz site. It is a projection,
+rebuilt from scratch every time from the repository and a snapshot of GitHub (every issue and
+PR, open or closed); it refuses to write into a non-empty folder it did not make (`.factory-vault`
+marker).
+
+| Note | Built from |
+| --- | --- |
+| `index.md` | Milestones from `docs/roadmap.md` (`### M<n> · <title> — status: …`, with `spec #n` and `PR #m`), what is working or waiting for a human, the documents, the latest job records |
+| `board.md` | Every spec and ticket grouped by status: working, needs human, needs info, queued (from the labels in `config.json`), open, done (closed with a merged PR or a job record), closed |
+| `specs/<n>.md` | An issue with the `spec` label: status, milestone, its tickets (`Parent: #n`) with status, PR and record, a mermaid graph of their `Blocked by:` lines, the description |
+| `tickets/<n>.md` | Any other issue: status, spec, blockers, PR (from its record, else a PR that says `Closes #n`; tickets of a spec show "via spec"), record, description |
+| `history/<job-id>.md` | `<history_dir>/*.md`, with a link back to the issue's note |
+| `docs/**`, `GLOSSARY.md`, `README.md` | Copied with the same paths, so links between them keep working |
+
+Links are relative markdown links (Quartz, Obsidian and GitHub all follow them); `#n` outside
+code becomes a link to that issue's note. Issue text and job records may carry HTML from outside:
+every `<` outside code is escaped. The generator only reads; it is meant to run in CI and publish
+the result (see factory-office).
+
 ## State machines
 
 `factory-job` is the only implementation of these tables (`lib/machine.py`, `lib/spec.py`). Any
@@ -336,6 +358,7 @@ condition not met or illegal transition, 2 usage or configuration error.
 | `recover` | Releases claims left by a dead session and checks that every worktree exists and is on the branch in `job.json`. The orchestrator runs it first |
 | `status [<id>]` | Readable state of one or all jobs |
 | `summary` | Table: job, kind, stage, round, risk, PR, reason |
+| `vault <out> [--title T]` | Builds the project wiki in `<out>` (see Wiki) |
 | `history [<id\|issue>…]` | Writes `<history_dir>/<job-id>.md` into the main checkout, uncommitted (backfill; default: every job with a PR) |
 | `office link <token> [--url URL]` | Link this repository to a factory-office (see Events): check the office accepts the token, save the link, send the history |
 | `office status\|unlink\|flush\|backfill` | Show where events go and whether the office answers; forget the link; send the outbox now; send every job's `events.log` again |
@@ -766,6 +789,10 @@ before it was applied.
   `docs/history/<job-id>.md` into the job's branch when it reaches a human or merges into its
   spec (see Job history); `factory-job history` backfills older jobs. `history_dir` is the
   first optional key in `config.json`, so existing configs keep validating.
+- 0.8.0, `factory-job vault`: the roadmap, specs, tickets, decisions and job records were spread
+  over the repository, GitHub and the job folders, with nothing to browse them as a whole. The
+  vault joins them into linked notes (see Wiki) that Obsidian opens and Quartz publishes. The
+  GitHub adapter gains `all_issues` and `all_prs` (open and closed) for it.
 
 ## References
 
