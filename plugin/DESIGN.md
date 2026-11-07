@@ -48,7 +48,7 @@ and `gh` authenticated as a user who can push, open PRs and manage labels in the
 Everything generic ships in the plugin `software-factory`, installed from the marketplace
 `ctdes-factory` (the repository `CTDes/software-factory`). Each project only holds
 `factory/checks.sh`, `factory/config.json`, its context files and `.claude/settings.json`, all
-created by `factory-init`.
+created by `/software-factory:setup` (through `factory-init`).
 
 ```text
 plugin software-factory/                (installed under ~/.claude/plugins/cache/…)
@@ -59,10 +59,11 @@ plugin software-factory/                (installed under ~/.claude/plugins/cache
   skills/factory/SKILL.md                orchestrator /software-factory:factory
   skills/tdd, code-review, grilling, domain-modeling, to-spec, to-tickets, retro   (Matt Pocock, MIT)
   skills/to-roadmap                      project → docs/roadmap.md (milestones, one spec each)
+  skills/setup                           /software-factory:setup: prepares a repository, new or existing
   hooks/hooks.json, agent_guard.py       agent guardrails (PreToolUse, by agent_type)
   bin/factory-job                        state machine; the only thing with effects on the remote and GitHub
   bin/factory-gate                       runs checks.sh, checks protected paths and evidence
-  bin/factory-init                       prepares a repository, new or existing
+  bin/factory-init                       writes the factory files; --check reports what is missing
   lib/                                   shared Python modules
   tests/                                 unittest, no network, fake GitHub
   templates/                             what factory-init writes
@@ -526,7 +527,8 @@ It touches no GitHub state: a milestone becomes an issue only when its spec is w
 
 ## factory-init
 
-`factory-init [--base <branch>] [--force] [--labels]`, run from the repository root:
+Users do not run it by hand any more: `/software-factory:setup` (below) runs it.
+`factory-init [--base <branch>] [--force] [--labels] [--check]`, run from the repository root:
 
 - Writes what is missing (everything with `--force`): `factory/config.json` (with the detected
   base branch), `factory/checks.sh`, `.github/workflows/checks.yml`, `.worktreeinclude`,
@@ -540,6 +542,33 @@ It touches no GitHub state: a milestone becomes an issue only when its spec is w
 - Warns about other workflows in `.github/workflows/`: the required check must run `checks.sh`.
 - `--labels` creates only the missing labels and never modifies existing ones. It warns if the
   `queue` or `spec` label already exists with open issues, because the factory would pick them up.
+- `--check` writes nothing. It prints one line per requirement, `ok`, `fail` or `warn` (git
+  2.40+, python 3.10+, `gh` authenticated with `WRITE`, `MAINTAIN` or `ADMIN` on the repository,
+  a global `PreToolUse` hook on Bash that mentions git), and per setup step, `ok` or `todo`
+  (factory files, labels, `checks.sh` no longer the template locally and on `origin/<base>`,
+  `checks` required by branch protection or a ruleset). It exits 1 only on a `fail`: a `todo`
+  is the next step, not an error.
+
+### /software-factory:setup
+
+The single entry point after installing the plugin. A skill, because most of it is judgement:
+reading a codebase, writing checks and context files, interviewing the user. The deterministic
+parts stay in `factory-init`.
+
+1. `factory-init --check`; stop on `fail` (or start a repository and its GitHub remote, with the
+   user's consent, when there is none).
+2. Decide new or existing project from the tracked files, confirmed by the user; switch to the
+   `factory-setup` branch; `factory-init --labels`.
+3. Existing project: real `checks.sh` from the project's own commands, CI toolchain,
+   `protected_paths` for the existing tests, `CLAUDE.md`, `GLOSSARY.md` and
+   `docs/architecture.md` drafted from the code, toolchain permissions, `.worktreeinclude`.
+   New project: requirements document (optional) → project-level `grilling` → `docs/brief.md`
+   → `domain-modeling` → `to-roadmap` → milestone 0 built with the user in the same session.
+4. `checks.sh` proven on a fresh worktree, then the `factory-setup` PR. The user pushes and
+   merges; the skill waits for CI.
+5. The user turns on `checks` as a required check (it needs admin rights); `--check` confirms.
+
+Every step leaves a file or a GitHub state, so rerunning the skill continues where it stopped.
 
 ## Out of scope
 
@@ -694,6 +723,16 @@ before it was applied.
   the marketplace. Each repository that enabled it had its own project-scope install, and those
   stayed on 0.4.x while the user-scope install reached 0.5.1. One install per user keeps a
   single copy up to date; the cost is a one-time `claude plugin install` per machine or person.
+
+- 0.6.0, `/software-factory:setup`: getting started took a README of manual steps (fill
+  `checks.sh`, the context files and `protected_paths`, push, protect the branch, and for a new
+  project chain grilling, domain-modeling and to-roadmap and build milestone 0 by hand). One
+  resumable skill now does all of it, new or existing project, and asks the user only for
+  decisions, the push and the merge. `factory-init --check` reports requirements and progress.
+  Branch protection stays manual: it needs admin rights and is a one-time click. New projects
+  get a `docs/brief.md` from the interview (optionally seeded from a requirements document),
+  which `to-roadmap` reads. Milestone 0 is still outside the factory, but built in the setup
+  session instead of on the user's own.
 
 ## References
 

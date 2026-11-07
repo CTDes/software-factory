@@ -26,6 +26,8 @@ when their spec is written.
 ### 1. Gather context
 
 - The conversation so far.
+- `docs/brief.md` and `docs/requirements/` if they exist (written by `/software-factory:setup`
+  for a new project): the roadmap delivers that brief's MVP and respects its out-of-scope list.
 - `GLOSSARY.md` and `docs/adr/` if they exist: use the glossary's vocabulary and respect the ADRs.
 - `docs/roadmap.md` if it exists: then this is an **update** (see below), not a new roadmap.
 - In an existing codebase, explore enough to know what already exists, so no milestone rebuilds it.
@@ -98,7 +100,8 @@ writing them.
 
 If the roadmap has an M0, the next step is building it by hand: scaffold, a real
 `factory/checks.sh` that passes, CI as a required check, merged to the base branch. Add the
-existing tests to `protected_paths` in `factory/config.json`.
+existing tests to `protected_paths` in `factory/config.json`. When this skill runs inside
+`/software-factory:setup`, return to it here: setup builds M0 with the user and opens its PR.
 
 Then, for the first factory milestone:
 `/software-factory:grilling` on that milestone (short, feature-level), then

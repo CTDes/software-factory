@@ -12,17 +12,41 @@ claude plugin marketplace add CTDes/software-factory
 claude plugin install software-factory@ctdes-factory
 ```
 
-Then, from the root of each repository that should use the factory:
+Then, in a Claude Code session at the root of each repository that should use the factory:
 
-```sh
-factory-init --labels      # inside a Claude Code session: the plugin puts it on PATH
+```text
+/software-factory:setup [path to a requirements document]
 ```
 
-`factory-init` writes what is missing (`factory/config.json`, `factory/checks.sh`, the CI
-workflow, `.worktreeinclude`, `CLAUDE.md`, `GLOSSARY.md`, `docs/architecture.md`), merges
-`.gitignore` and `.claude/settings.json` (permissions, marketplace) and creates the
-labels. Only `factory/checks.sh`, `factory/config.json` and the context files are
-project-specific; everything else comes from the plugin.
+It runs `factory-init --check` (requirements and what is missing), decides with you whether the
+repository is a new or an existing project, and then:
+
+- **Existing project:** writes a real `factory/checks.sh` from the commands the project already
+  uses, adapts the CI workflow, adds the existing tests to `protected_paths`, drafts the context
+  files from the code and adds the toolchain permissions.
+- **New project:** interviews you (from your requirements document, if any) into
+  `docs/brief.md`, then glossary and ADRs (`domain-modeling`), `docs/roadmap.md` and the context
+  files (`to-roadmap`), and builds milestone 0 with you.
+
+Both end the same way: checks proven on a fresh worktree, a `factory-setup` PR with green CI that
+you merge, and `checks` as a required check, which you turn on (it needs admin rights; the
+skill gives you the link and the steps). It never pushes: it asks you to run `! git push …`.
+It is resumable: rerun it and it skips what is already done.
+
+### factory-init
+
+The script underneath, on PATH inside a Claude Code session. You rarely need it by hand.
+
+- `factory-init --check` writes nothing and prints one line per requirement (`ok`, `fail`,
+  `warn`) and per setup step (`ok`, `todo`): git 2.40+, python 3.10+, `gh` authenticated with
+  write access to the repository, the global git guardrails hook, the factory files, the
+  labels, a real `checks.sh` locally and on the base branch, and `checks` as a required check
+  (branch protection or ruleset). It exits 1 only on a `fail`.
+- `factory-init [--labels]` writes what is missing (`factory/config.json`, `factory/checks.sh`,
+  the CI workflow, `.worktreeinclude`, `CLAUDE.md`, `GLOSSARY.md`, `docs/architecture.md`),
+  merges `.gitignore` and `.claude/settings.json` (permissions, marketplace) and, with
+  `--labels`, creates the labels. Only `factory/checks.sh`, `factory/config.json` and the
+  context files are project-specific; everything else comes from the plugin.
 
 In an existing repository it never overwrites anything (unless `--force`, which does not apply
 to labels):
@@ -39,17 +63,18 @@ to labels):
 
 - `/software-factory:factory run` drains every labelled issue and spec.
 - `/software-factory:factory issue <n>`, `spec <n>`, `rework <n>`, `status`.
-- Human skills: `/software-factory:to-roadmap`, `/software-factory:to-spec`,
-  `/software-factory:to-tickets`, `/software-factory:grilling`,
+- Human skills: `/software-factory:setup`, `/software-factory:to-roadmap`,
+  `/software-factory:to-spec`, `/software-factory:to-tickets`, `/software-factory:grilling`,
   `/software-factory:domain-modeling`, `/software-factory:retro`.
 
 Two ways to work, step by step, in the [repository README](../README.md#two-ways-to-work):
 
-- **New project:** grilling about the whole project → `to-roadmap` (`docs/roadmap.md`, one
-  milestone per spec) → for each milestone: grilling → `to-spec` → `to-tickets` → approve with the
-  queue label → `factory spec <n>` → test and merge the PR → `retro` and `to-roadmap update`.
-- **Existing project:** write issues, label them `ready-for-agent`, `factory issue <n>` or
-  `factory run`, review and merge each PR.
+- **New project:** `setup` (interview → `docs/brief.md` → glossary and ADRs → `docs/roadmap.md`
+  → milestone 0 → setup PR) → for each milestone: grilling → `to-spec` → `to-tickets` → approve
+  with the queue label → `factory spec <n>` → test and merge the PR → `retro` and
+  `to-roadmap update`.
+- **Existing project:** `setup`, then write issues, label them `ready-for-agent`,
+  `factory issue <n>` or `factory run`, review and merge each PR.
 
 ## Office (optional)
 

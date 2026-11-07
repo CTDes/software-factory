@@ -45,26 +45,33 @@ claude plugin marketplace add CTDes/software-factory
 claude plugin install software-factory@ctdes-factory
 ```
 
-In each repository that should use the factory, inside a Claude Code session and from the repo
-root:
+Then, in each repository that should use the factory, open a Claude Code session at the repo
+root and run:
 
-```sh
-factory-init --labels
+```text
+/software-factory:setup [path to a requirements document]
 ```
 
-Then:
+It checks the requirements, then takes one of two paths:
 
-1. Make `factory/checks.sh` run your lint, typecheck, tests and build, and make sure it passes on
-   the base branch.
-2. Fill in `CLAUDE.md`, `GLOSSARY.md` and `docs/architecture.md`, and add your existing tests to
-   `protected_paths` in `factory/config.json`.
-3. Commit, push, and make the `checks` workflow a required check on the base branch.
-4. Label an issue `ready-for-agent` and run `/software-factory:factory issue <n>`. Once you trust
-   it, use `/software-factory:factory run` to drain the whole queue.
+- **Existing project:** it reads the code and CI, writes a `factory/checks.sh` that runs your
+  real lint, typecheck, tests and build, drafts `CLAUDE.md`, `GLOSSARY.md` and
+  `docs/architecture.md`, and protects your existing tests.
+- **New project:** it interviews you (starting from your requirements document, if you have one),
+  writes `docs/brief.md`, the glossary, the ADRs and `docs/roadmap.md`, and builds milestone 0
+  with you: the scaffold and the real checks.
 
-`factory-init` is safe on existing repositories. It never overwrites files or labels, appends a
-factory section to an existing `CLAUDE.md`, and warns about existing CI workflows and labels.
-See [`plugin/README.md`](plugin/README.md) for the details, every command and how updates work.
+Either way it shows every file before writing it, opens a setup PR with green CI, and walks you
+through making `checks` a required check. You only answer questions, run the push it asks for
+and merge. If you stop halfway, run it again: it continues where it left off.
+`factory-init --check` shows at any time what is ready and what is missing.
+
+Then label an issue `ready-for-agent` and run `/software-factory:factory issue <n>`. Once you
+trust it, `/software-factory:factory run` drains the whole queue.
+
+`/software-factory:setup` is safe on existing repositories: it works on a `factory-setup` branch,
+and the `factory-init` script underneath never overwrites files or labels. See
+[`plugin/README.md`](plugin/README.md) for the details, every command and how updates work.
 
 ## Two ways to work
 
@@ -73,23 +80,21 @@ See [`plugin/README.md`](plugin/README.md) for the details, every command and ho
 For something bigger than one PR. The human's work goes into thinking up front and testing at
 the end; the factory builds everything in between.
 
-1. **Prepare the repo** with `factory-init --labels`. In a new project there is nothing to check
-   yet: the real `factory/checks.sh` comes with milestone 0 (step 4).
-2. **Grill the whole project:** `/software-factory:grilling`, saying it is about the project, not
-   a feature: vision, users, MVP scope, what is out, rough architecture, technical risks.
-   Record hard-to-reverse decisions as ADRs and the vocabulary in `GLOSSARY.md` with
-   `/software-factory:domain-modeling`.
-3. **Roadmap:** `/software-factory:to-roadmap`, in the same conversation, writes
-   `docs/roadmap.md`: ordered milestones, each testable by a human on its own and sized for one
-   spec (about 4–10 tickets). Milestone 1 is a walking skeleton, the riskiest work comes next.
-   It also offers to fill `CLAUDE.md` and `docs/architecture.md` with what was decided, since
-   the agents start every job knowing only what the repo says. Commit them.
-4. **Milestone 0, by hand:** the stack's minimal scaffold, a `factory/checks.sh` that runs the
-   real lint, typecheck, tests and build, and the `checks` workflow as a required check, merged
-   to the base branch. The factory cannot do this one: `factory/**` and `.github/**` are
-   protected paths, and the gate always judges with the base branch's `checks.sh`. Keep it
-   honest: it is the only judge the factory has.
-5. **For each factory milestone, in order:**
+1. **Set up with `/software-factory:setup`.** In a new project it is a guided session with you:
+   - **Interview:** a grilling about the whole project (vision, users, MVP scope, what is out,
+     rough architecture, technical risks), starting from your requirements document if you pass
+     its path. It writes `docs/brief.md`.
+   - **Domain and roadmap:** `GLOSSARY.md` and ADRs for the hard-to-reverse decisions, then
+     `docs/roadmap.md`: ordered milestones, each testable by a human on its own and sized for
+     one spec (about 4–10 tickets). Milestone 1 is a walking skeleton, the riskiest work comes
+     next. `CLAUDE.md` and `docs/architecture.md` get what was decided, since the agents start
+     every job knowing only what the repo says.
+   - **Milestone 0:** the stack's minimal scaffold and a `factory/checks.sh` that runs the real
+     lint, typecheck, tests and build, built with you in the same session. The factory cannot do
+     this one: `factory/**` and `.github/**` are protected paths, and the gate always judges
+     with the base branch's `checks.sh`. Keep it honest: it is the only judge the factory has.
+   - **Setup PR** with green CI, merged by you, and `checks` as a required check.
+2. **For each factory milestone, in order:**
    1. `/software-factory:grilling` on the milestone (short, feature level). If the milestone is
       still foggy (unknown APIs, an unsettled data model, something that needs a prototype),
       resolve those decisions first, one session each, before writing its spec. Matt Pocock's
@@ -109,10 +114,10 @@ the end; the factory builds everything in between.
 
 For bugs, small features and refactors in a codebase that already works and has real checks.
 
-1. **Prepare the repo** with `factory-init --labels`. It never overwrites anything. Make sure
-   `factory/checks.sh` runs your real lint, typecheck, tests and build and passes on the base
-   branch, add your existing tests to `protected_paths`, and fill in `CLAUDE.md` and
-   `GLOSSARY.md` so the agents know the conventions.
+1. **Set up with `/software-factory:setup`.** It reads the code and CI, writes a
+   `factory/checks.sh` that runs your real lint, typecheck, tests and build, adds your existing
+   tests to `protected_paths`, drafts `CLAUDE.md`, `GLOSSARY.md` and `docs/architecture.md` so
+   the agents know the conventions, and opens the setup PR. You review the drafts and merge.
 2. **Write issues** as you would for a colleague: what to change and how to know it works. One
    issue is one PR. If the issue is fuzzy, `/software-factory:grilling` it first.
 3. **Queue them:** add `ready-for-agent`. Start with `/software-factory:factory issue <n>` on one
@@ -121,12 +126,13 @@ For bugs, small features and refactors in a codebase that already works and has 
    `/software-factory:factory rework <n>`.
 
 When a change in an existing project is too big for one PR, use a single spec for it (steps
-5.1–5.6 of the new-project flow). Use a roadmap only when it needs several specs.
+2.1–2.6 of the new-project flow). Use a roadmap only when it needs several specs.
 
 ## Skills for the human
 
 | Skill | Use |
 | --- | --- |
+| `/software-factory:setup` | Prepare a repository, new or existing, until the factory can take its first job |
 | `/software-factory:to-roadmap` | Turn a project-level conversation into `docs/roadmap.md`: milestones, one spec each |
 | `/software-factory:to-spec` | Turn a conversation into a spec issue |
 | `/software-factory:to-tickets` | Break an approved spec into child tickets with `Parent:` / `Blocked by:` |
@@ -136,7 +142,7 @@ When a change in an existing project is too big for one PR, use a single spec fo
 
 `tdd`, `code-review`, `grilling`, `domain-modeling`, `to-spec`, `to-tickets` and `retro` are
 adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill folder
-keeps its license. `to-roadmap` and `factory` are this repository's own.
+keeps its license. `setup`, `to-roadmap` and `factory` are this repository's own.
 
 ## This repository
 

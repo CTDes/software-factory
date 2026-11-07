@@ -4,6 +4,8 @@ Writes only what is missing (or everything with --force), merges .gitignore and
 .claude/settings.json instead of replacing them, and can create the GitHub labels.
 In an existing repository it also appends the factory section to an existing CLAUDE.md,
 warns about CI workflows that already exist, and never overwrites existing labels.
+--check writes nothing and reports requirements and setup progress (lib/check.py).
+/software-factory:setup drives it; users rarely run it by hand.
 """
 
 from __future__ import annotations
@@ -16,7 +18,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from lib.util import EXIT_OK, EXIT_USAGE, CommandError, run
+from lib.check import check
+from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, CommandError, run
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 GITIGNORE_LINES = ["factory/jobs/", ".claude/worktrees/"]
@@ -205,14 +208,9 @@ def init(root: Path, base: str | None, force: bool, labels: bool) -> list[str]:
 
 
 NEXT_STEPS = """
-Next steps:
-  1. Edit factory/checks.sh (lint, typecheck, tests, build) until it passes on {base}.
-  2. Fill CLAUDE.md (and its "Software factory" section), GLOSSARY.md and
-     docs/architecture.md; add your existing tests to protected_paths in factory/config.json.
-  3. Commit, push, and make the `checks` workflow a required check on {base}.
-  4. Label an issue `ready-for-agent` and run /software-factory:factory run.
-New project? Start with /software-factory:grilling and /software-factory:to-roadmap
-instead: steps 1-3 become its milestone 0 (see the README, "Two ways to work").
+Next: /software-factory:setup writes the real factory/checks.sh and the context files, opens
+the setup PR against {base} and walks you through the required check. `factory-init --check`
+shows what is still missing.
 """
 
 
@@ -223,11 +221,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--labels", action="store_true", help="create the config labels on GitHub with gh"
     )
+    p.add_argument(
+        "--check",
+        action="store_true",
+        help="write nothing: report requirements and what setup still has to do",
+    )
     args = p.parse_args(argv)
     root = repo_root()
     if Path(os.path.realpath(root)) != Path(os.path.realpath(Path.cwd())):
         print(f"factory-init: run it from the repository root ({root})", file=sys.stderr)
         return EXIT_USAGE
+    if args.check:
+        report, ok = check(root, args.base or default_branch(root))
+        print("\n".join(report))
+        return EXIT_OK if ok else EXIT_CONDITION
     for line in init(root, args.base, args.force, args.labels):
         print(line)
     print(NEXT_STEPS.format(base=args.base or default_branch(root)))
