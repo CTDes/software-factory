@@ -21,6 +21,7 @@ from lib.machine import (
     Transition,
     _archive_build,
     _comment,
+    _commit_history,
     _escalate,
     _label,
     _rel,
@@ -445,6 +446,7 @@ def _to_ready(ctx: Ctx, spec: Job) -> Transition:
         updates["pr"] = pr["number"]
 
     effects: list[Effect] = [
+        _commit_history(ctx, spec, "ready", "FINAL PASS", push_branch=spec["branch"]),
         open_pr,
         _label(ctx, n, cfg.label("needs_human")),
         _comment(ctx, n, say(spec, f"spec ready to test and merge.\n\n{summary}")),

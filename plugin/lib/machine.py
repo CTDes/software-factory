@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from lib import contracts, gate, git, prompts
+from lib import contracts, gate, git, history, prompts
 from lib import issue as issue_md
 from lib.config import Config
 from lib.github import GitHub
@@ -160,6 +160,26 @@ def _archive_build(job: Job) -> Effect:
         if src.exists() and job["round"] > 0:
             job.round_dir().mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(job.round_dir() / "build.md"))
+
+    return run
+
+
+def _commit_history(
+    ctx: Ctx, job: Job, to: str, reason: str, push_branch: str | None = None
+) -> Effect:
+    """Commit <history_dir>/<job-id>.md into the job's worktree branch (DESIGN.md · Job history).
+
+    With push_branch, push it so the open PR shows it. pushed_at is left alone on purpose:
+    `job rework` must still see human comments made since the builder's last push.
+    """
+
+    def run() -> None:
+        wt = job.worktree
+        if not wt.is_dir():
+            return
+        pending = (now(), job.stage, to, reason)
+        if history.commit(ctx.cfg, job, wt, pending) and push_branch:
+            git.push_branch(wt, push_branch)
 
     return run
 
@@ -406,7 +426,13 @@ def _from_review(ctx: Ctx, job: Job) -> Transition:
         )
     always_human = [s for s in job.get("surfaces") or [] if s in cfg["always_human_surfaces"]]
     if job["spec"] and not always_human:
-        return Transition("merging", "PASS", updates={"agent": None})
+        # job merge pushes HEAD (history commit included) into the spec branch
+        return Transition(
+            "merging",
+            "PASS",
+            [_commit_history(ctx, job, "merging", "PASS")],
+            updates={"agent": None},
+        )
     summary = say(
         job,
         f"ready for a human: gate and review green in round {job['round']}.\n\n"
@@ -417,8 +443,9 @@ def _from_review(ctx: Ctx, job: Job) -> Transition:
             else ""
         ),
     )
+    reason = "PASS" + (f" always-human={','.join(always_human)}" if always_human else "")
     updates: dict[str, Any] = {"agent": None, "reason": "PASS"}
-    effects: list[Effect] = []
+    effects: list[Effect] = [_commit_history(ctx, job, "ready", reason, push_branch=job["branch"])]
     if not job["spec"]:
 
         def ready() -> None:
@@ -439,12 +466,7 @@ def _from_review(ctx: Ctx, job: Job) -> Transition:
 
         effects.append(open_pr)
     effects += [_label(ctx, n, cfg.label("needs_human")), _comment(ctx, n, summary)]
-    return Transition(
-        "ready",
-        "PASS" + (f" always-human={','.join(always_human)}" if always_human else ""),
-        effects,
-        updates,
-    )
+    return Transition("ready", reason, effects, updates)
 
 
 def _from_waiting_human(ctx: Ctx, job: Job) -> Transition:

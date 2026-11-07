@@ -34,5 +34,6 @@
     ".claude/**"
   ],
   "checks_timeout_s": 900,
-  "log_tail_lines": 80
+  "log_tail_lines": 80,
+  "history_dir": "docs/history"
 }

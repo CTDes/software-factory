@@ -41,6 +41,8 @@ Protected paths (`protected_paths` in `factory/config.json`, e.g. `tests/**`, `f
 an existing test is in your way, the problem is in the code, not the test; if it really has to
 change, that is a human decision: BLOCKED.
 
+Never edit `docs/history/`: `factory-job` writes the job's record there when it reaches a human.
+
 Before declaring READY: a clean tree (everything committed) and `cd <worktree> && factory/checks.sh`
 green. Never declare READY with red checks.
 

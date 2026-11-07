@@ -73,6 +73,7 @@ plugin software-factory/                (installed under ~/.claude/plugins/cache
   GLOSSARY.md                            domain vocabulary
   docs/adr/NNNN-*.md                     architecture decisions
   docs/architecture.md                   module map, interfaces, allowed dependencies, folder ownership
+  docs/history/<job-id>.md               each job's record, committed by factory-job (see Job history)
   .worktreeinclude                       untracked files every worktree needs (.env…)
   .gitignore                             adds factory/jobs/ and .claude/worktrees/
   .github/workflows/checks.yml           runs factory/checks.sh; required check on the base branch
@@ -118,7 +119,8 @@ validates it on start and refuses to work if a key is missing or has the wrong t
   "always_human_surfaces": [],
   "protected_paths": ["factory/**", ".github/**", ".claude/**"],
   "checks_timeout_s": 900,
-  "log_tail_lines": 80
+  "log_tail_lines": 80,
+  "history_dir": "docs/history"
 }
 ```
 
@@ -132,6 +134,7 @@ validates it on start and refuses to work if a key is missing or has the wrong t
 | `models` | Model per agent and, for builder and reviewer, per risk |
 | `always_human_surfaces` | Surfaces that never merge into the spec branch on their own, even when everything passes (e.g. `payments`) |
 | `protected_paths` | Globs. The gate fails if the diff modifies or deletes a matching file. Adding new matching files is allowed. Projects add their existing tests here |
+| `history_dir` | Optional (default `docs/history`): where `factory-job` commits each job's record (see Job history). `""` turns it off. Must be a path inside the repository |
 
 ## Jobs
 
@@ -217,6 +220,29 @@ accepted, so jobs that were in flight keep parsing.
 Agents return a single line to the orchestrator: the main header of their file
 (`ACCEPT risk=medium surfaces=ui`, `READY`, `CHANGES`…). The orchestrator only prints it.
 
+### Job history
+
+`factory/jobs/` is gitignored, so the plan, the builds, the gate results and the reviews of a job
+would only live on the machine that ran it. When a ticket reaches a human (`review → ready`) or
+is about to merge into its spec (`review → merging`), and when a spec reaches `ready`,
+`factory-job` renders the job folder into `<history_dir>/<job-id>.md` and commits it alone to the
+job's branch (`docs(history): <job-id>`), pushing it when a PR shows that branch. After the merge
+the record lives in git next to the code it explains: a wiki or any other view can be rebuilt
+from the repository alone.
+
+The file (`lib/history.py`) has a JSON-valued front matter (job, kind, issue, title, spec, pr,
+stage, risk, surfaces, rounds, created, updated) and then: the issue, the plan (and earlier
+NEEDS-INFO questions), one section per round (build, gate header and summary, review, merge),
+human feedback (`rework-N.md`) and a timeline from `events.log` that includes the transition
+being applied. A spec's file also links its tickets' files. Issue and comment text goes inside
+code fences longer than any backtick run in it, so external text renders as text. A later trip
+back to `build` regenerates the file at the next `ready`. `pushed_at` does not move: `job rework`
+still sees comments made since the builder's last push. The reviewer ignores `docs/history/`
+and the builder never edits it.
+
+`factory-job history [<id|issue>…]` writes the same file into the main checkout, uncommitted,
+for jobs that finished before this existed (by default every job with a PR).
+
 ## State machines
 
 `factory-job` is the only implementation of these tables (`lib/machine.py`, `lib/spec.py`). Any
@@ -243,8 +269,8 @@ States: `intake`, `needs-info`, `rejected`, `build`, `gate`, `review`, `merging`
 | `gate` | `needs-human` | `GATE: FAIL` and `round = max_rounds` | Comments. Adds `needs_human` |
 | `review` | `build` | `VERDICT: CHANGES` and `round < max_rounds` | Archives `build.md`, sets `feedback` |
 | `review` | `needs-human` | `CHANGES` and `round = max_rounds`, or the contract broken twice | Comments. Adds `needs_human` |
-| `review` | `merging` | `PASS`, ticket of a spec, no surface in `always_human_surfaces` | None |
-| `review` | `ready` | `PASS` and standalone ticket, or a surface in `always_human_surfaces` | Standalone: PR leaves draft. In a spec: opens a PR against the spec branch. Adds `needs_human`, comments a summary |
+| `review` | `merging` | `PASS`, ticket of a spec, no surface in `always_human_surfaces` | Commits the job history (not pushed; `job merge` pushes it into the spec branch) |
+| `review` | `ready` | `PASS` and standalone ticket, or a surface in `always_human_surfaces` | Commits and pushes the job history. Standalone: PR leaves draft. In a spec: opens a PR against the spec branch. Adds `needs_human`, comments a summary |
 | `merging` | `done` | `job merge` succeeds | Fast-forward push of the ticket branch into the spec branch. Comments and closes the issue. Deletes worktree, local and remote branch. Removes labels |
 | `merging` | `build` | Conflict integrating the base, or red gate after integrating it, and rounds left | Writes `round-N/merge.md`, sets `feedback`. `round` is not incremented here: `build → gate` does it |
 | `merging` | `needs-human` | Same, with no rounds left | Comments. Adds `needs_human` |
@@ -267,7 +293,7 @@ States: `building`, `final-review`, `final-build`, `ready`, `needs-human`, `done
 | --- | --- | --- | --- |
 | (new) | `building` | `job spec create <n>`: the issue has `spec` and `queue`, its children form a valid graph | Creates `spec/<id>` from `origin/<base_branch>` and pushes it. Creates a ticket job in `intake` per child. Comments the graph on the spec issue |
 | `building` | `final-review` | Every ticket is `done` | Creates the spec branch worktree. `round = 1` |
-| `final-review` | `ready` | Final gate PASS and final review PASS | Opens PR `spec/<id>` → base "Closes #n", not draft. Adds `needs_human`. Comments a summary: tickets, rounds, escalations |
+| `final-review` | `ready` | Final gate PASS and final review PASS | Commits and pushes the spec's history. Opens PR `spec/<id>` → base "Closes #n", not draft. Adds `needs_human`. Comments a summary: tickets, rounds, escalations |
 | `final-review` | `final-build` | Final gate or final review with changes and `round < max_rounds` | Archives `build.md`, sets `feedback` |
 | `final-build` | `final-review` | `build.md` with `READY` | Pushes the spec branch. `round += 1` |
 | `final-review`, `final-build` | `needs-human` | Rounds exhausted or `BLOCKED` | Comments. Adds `needs_human` |
@@ -310,6 +336,7 @@ condition not met or illegal transition, 2 usage or configuration error.
 | `recover` | Releases claims left by a dead session and checks that every worktree exists and is on the branch in `job.json`. The orchestrator runs it first |
 | `status [<id>]` | Readable state of one or all jobs |
 | `summary` | Table: job, kind, stage, round, risk, PR, reason |
+| `history [<id\|issue>…]` | Writes `<history_dir>/<job-id>.md` into the main checkout, uncommitted (backfill; default: every job with a PR) |
 | `office link <token> [--url URL]` | Link this repository to a factory-office (see Events): check the office accepts the token, save the link, send the history |
 | `office status\|unlink\|flush\|backfill` | Show where events go and whether the office answers; forget the link; send the outbox now; send every job's `events.log` again |
 
@@ -733,6 +760,12 @@ before it was applied.
   get a `docs/brief.md` from the interview (optionally seeded from a requirements document),
   which `to-roadmap` reads. Milestone 0 is still outside the factory, but built in the setup
   session instead of on the user's own.
+- 0.7.0, job history in git: a job's plan, rounds and reviews lived only in the gitignored
+  `factory/jobs/` of one machine, so a wiki on another machine (the factory-office) could not
+  show how anything was built without becoming the only copy of it. `factory-job` now commits
+  `docs/history/<job-id>.md` into the job's branch when it reaches a human or merges into its
+  spec (see Job history); `factory-job history` backfills older jobs. `history_dir` is the
+  first optional key in `config.json`, so existing configs keep validating.
 
 ## References
 

@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from lib import config, events, gate, jobs, machine
+from lib import config, events, gate, history, jobs, machine
 from lib.github import connect
 from lib.util import EXIT_CONDITION, EXIT_OK, EXIT_USAGE, FactoryError, UsageError
 
@@ -95,6 +95,10 @@ def job_main(argv: Sequence[str] | None = None) -> int:
     st = sub.add_parser("status")
     st.add_argument("id", nargs="?")
     sub.add_parser("summary")
+    hi = sub.add_parser(
+        "history", help="write docs/history/<job>.md into this checkout (backfill, uncommitted)"
+    )
+    hi.add_argument("refs", nargs="*", metavar="id|issue", help="default: every job with a PR")
     of = sub.add_parser("office", help="link this repository to a factory-office")
     of.add_argument("subcmd", choices=["link", "unlink", "status", "flush", "backfill"])
     of.add_argument("token", nargs="?", help="the office token (link only)")
@@ -149,6 +153,21 @@ def job_main(argv: Sequence[str] | None = None) -> int:
             print("\n\n".join(_status(j) for j in targets) or "no jobs")
         elif args.cmd == "summary":
             print(_summary(cfg))
+        elif args.cmd == "history":
+            targets = (
+                [jobs.resolve(cfg, r) for r in args.refs]
+                if args.refs
+                else [j for j in jobs.all_jobs(cfg) if j.get("pr") or j.stage == "done"]
+            )
+            if not targets:
+                print("history: no jobs with a PR")
+            for j in targets:
+                path = history.write(cfg, j)
+                if path is None:
+                    raise FactoryError(
+                        "history is off: 'history_dir' is empty in factory/config.json"
+                    )
+                print(f"{j.id} -> {path.relative_to(cfg.root)}")
     except FactoryError as exc:
         print(f"factory-job: {exc}", file=sys.stderr)
         return exc.code

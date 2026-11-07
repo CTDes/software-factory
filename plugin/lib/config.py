@@ -32,6 +32,11 @@ SCHEMA: dict[str, type] = {
     "log_tail_lines": int,
 }
 
+# Keys added after 0.6.0: optional, so existing config.json files keep working.
+OPTIONAL: dict[str, tuple[type, object]] = {
+    "history_dir": (str, "docs/history"),  # "" turns job history off
+}
+
 
 @dataclass(frozen=True)
 class Config:
@@ -112,6 +117,12 @@ def validate(data: Any) -> None:
     for key in ("always_human_surfaces", "protected_paths"):
         if not all(isinstance(v, str) for v in data[key]):
             raise _fail(f"'{key}' must be a list of strings")
+    for key, (typ, _default) in OPTIONAL.items():
+        if key in data and not isinstance(data[key], typ):
+            raise _fail(f"'{key}' must be {typ.__name__}, got {type(data[key]).__name__}")
+    history = str(data.get("history_dir", ""))
+    if history.startswith("/") or ".." in Path(history).parts:
+        raise _fail("'history_dir' must be a path inside the repository")
 
 
 def load(root: Path | None = None) -> Config:
@@ -124,4 +135,6 @@ def load(root: Path | None = None) -> Config:
     except json.JSONDecodeError as exc:
         raise _fail(f"invalid JSON: {exc}") from exc
     validate(data)
+    for key, (_typ, default) in OPTIONAL.items():
+        data.setdefault(key, default)
     return Config(root=root, data=data)

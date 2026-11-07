@@ -25,6 +25,9 @@ You do not run tests: the gate already did and it is green. Also read `plan.md`,
 `docs/architecture.md`, `GLOSSARY.md`, and `CODING_STANDARDS.md` or `CONTRIBUTING.md` if they
 exist, all inside the worktree or the job folder.
 
+Ignore files under `docs/history/` and commits titled `docs(history): …`: `factory-job` writes
+them (the job's own record) and they are not part of the change you review.
+
 ## Axes
 
 Each axis is an independent section. Do not mix them or rank one over another: a change can pass
