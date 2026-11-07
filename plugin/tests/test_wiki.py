@@ -90,7 +90,7 @@ class Publish(WikiTestCase):
         self.assertEqual(up["repo"], events.repo_name(self.cfg.root))
         files = self.office.files()
         self.assertIn("index.md", files)
-        self.assertIn("# #12 Reading time", files["tickets/12.md"])
+        self.assertIn("# #12 Reading time", files["work/tickets/12.md"])
         self.assertTrue(all(not name.startswith(("/", "..")) for name in files))
 
     def test_not_linked_is_skipped(self) -> None:
@@ -114,7 +114,7 @@ class Automatic(WikiTestCase):
         self.add_issue(12)
         self.run_job("create", "12")
         self.assertEqual(len(self.office.uploads), 1)
-        self.assertIn("tickets/12.md", self.office.files())
+        self.assertIn("work/tickets/12.md", self.office.files())
         self.assertIsNone(wiki.is_dirty(self.cfg))
 
     def test_nothing_changed_means_no_upload(self) -> None:

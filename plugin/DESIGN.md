@@ -251,20 +251,27 @@ rebuilt from scratch every time from the repository and a snapshot of GitHub (ev
 PR, open or closed); it refuses to write into a non-empty folder it did not make (`.factory-vault`
 marker).
 
+What the project knows is grouped in six categories, one folder each with an index note; only
+the wiki is organised this way, the repository's files stay where they are (`place_doc`).
+
 | Note | Built from |
 | --- | --- |
-| `index.md` | Milestones from `docs/roadmap.md` (`### M<n> · <title> — status: …`, with `spec #n` and `PR #m`), what is working or waiting for a human, the documents, the latest job records |
-| `board.md` | Every spec and ticket grouped by status: working, needs human, needs info, queued (from the labels in `config.json`), open, done (closed with a merged PR or a job record), closed |
-| `specs/<n>.md` | An issue with the `spec` label: status, milestone, its tickets (`Parent: #n`) with status, PR and record, a mermaid graph of their `Blocked by:` lines, the description |
-| `tickets/<n>.md` | Any other issue: status, spec, blockers, PR (from its record, else a PR that says `Closes #n`; tickets of a spec show "via spec"), record, description |
-| `history/<job-id>.md` | `<history_dir>/*.md`, with a link back to the issue's note |
-| `docs/**`, `GLOSSARY.md`, `README.md` | Copied with the same paths, so links between them keep working |
+| `index.md` | The categories with what each holds and how much, milestones, what is working or waiting for a human, the latest job records |
+| `product/` | `README.md`, `docs/brief.md`, `docs/requirements/**`, `docs/roadmap.md`. Index: milestones from the roadmap (`### M<n> · <title> — status: …`, with `spec #n` and `PR #m`) |
+| `domain/` | `GLOSSARY.md`. Index: its terms (`**Term**:` lines or a table's first column) |
+| `architecture/` | `docs/architecture.md`, `CLAUDE.md` (as "How to work in this repository") and any other document in `docs/` |
+| `decisions/` | `docs/adr/*.md`. Index: a table of title, status and date read from each ADR's first lines |
+| `work/` | Index: every spec and ticket grouped by status: working, needs human, needs info, queued (from the labels in `config.json`), open, done (closed with a merged PR or a job record), closed. `specs/<n>.md`: an issue with the `spec` label, its status, milestone, tickets (`Parent: #n`) with status, PR and record, a mermaid graph of their `Blocked by:` lines and the description. `tickets/<n>.md`: any other issue, with its spec, blockers, PR (from its record, else a PR that says `Closes #n`; tickets of a spec show "via spec") and record |
+| `history/` | `<history_dir>/*.md`, each with a link back to its issue. Index: every record, newest first |
+
+Relative links inside documents are rewritten for their place in the wiki; a link to a
+repository file outside the wiki (`LICENSE`, code, another README) points at that file on GitHub
+at the commit built from.
 
 Links are relative markdown links (Quartz, Obsidian and GitHub all follow them); `#n` outside
 code becomes a link to that issue's note. Issue text and job records may carry HTML from outside:
 every `<` outside code is escaped, and link targets with a `javascript:`, `vbscript:` or `data:`
-scheme are defused. A relative link from a document to a repository file outside the wiki
-(`LICENSE`, code, another README) points at that file on GitHub at the commit built from. The generator only reads.
+scheme are defused. The generator only reads.
 
 ### Wiki publishing
 
@@ -816,6 +823,11 @@ before it was applied.
   but the office runs on the user's machine (127.0.0.1), out of reach of GitHub's runners. The
   office builds Quartz instead and factory-job sends it the vault after transitions, through the
   same link as events. Once the office is on a public host, a CI job can send the same upload.
+- 0.10.0, wiki categories: the wiki mirrored the repository's folders (docs/, history/, specs/,
+  tickets/), so finding what the project knows meant knowing where each file lives. Notes are now
+  grouped in Product, Domain, Architecture, Decisions, Work and History, each with an index
+  (milestones, glossary terms, a table of decisions, the board, every record), and the home page
+  starts from them. Only the wiki moves; the repository's layout and the agents are unchanged.
 
 ## References
 

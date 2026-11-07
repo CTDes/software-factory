@@ -48,14 +48,20 @@ class VaultTestCase(FactoryTestCase):
 class Structure(VaultTestCase):
     def test_writes_index_board_specs_and_tickets(self) -> None:
         notes = self.build()
-        for rel in ("index.md", "board.md", "specs/20.md", "tickets/21.md", "tickets/23.md"):
+        for rel in (
+            "index.md",
+            "work/index.md",
+            "work/specs/20.md",
+            "work/tickets/21.md",
+            "work/tickets/23.md",
+        ):
             self.assertIn(rel, notes)
             self.assertTrue((self.out / rel).is_file(), rel)
         self.assertTrue((self.out / vault.MARKER).exists())
 
     def test_spec_lists_tickets_and_their_dependency_graph(self) -> None:
         self.build()
-        spec = self.note("specs/20.md")
+        spec = self.note("work/specs/20.md")
         self.assertIn('title: "#20 Text statistics"', spec)
         self.assertIn("| [#21 Char count](../tickets/21.md) | queued | via spec | - |", spec)
         self.assertIn("```mermaid", spec)
@@ -64,7 +70,7 @@ class Structure(VaultTestCase):
 
     def test_ticket_links_its_spec_and_blockers(self) -> None:
         self.build()
-        t = self.note("tickets/22.md")
+        t = self.note("work/tickets/22.md")
         self.assertIn("**Status:** working", t)
         self.assertIn("**Spec:** [#20 Text statistics](../specs/20.md)", t)
         self.assertIn("**Blocked by:** [#21](21.md)", t)
@@ -72,10 +78,11 @@ class Structure(VaultTestCase):
 
     def test_board_groups_by_status(self) -> None:
         self.build()
-        board = self.note("board.md")
+        board = self.note("work/index.md")
         self.assertLess(board.index("## Working (1)"), board.index("## Needs human (1)"))
         self.assertIn("## Queued (2)", board)
         self.assertIn("| [#23 Typo](tickets/23.md) | ticket | - | - | - |", board)
+        self.assertIn('title: "Work"', board)
 
 
 class Milestones(VaultTestCase):
@@ -84,13 +91,17 @@ class Milestones(VaultTestCase):
         self.build()
         index = self.note("index.md")
         self.assertIn(
-            "| M1 · Text statistics | in progress | [#20 · queued](specs/20.md) | - |", index
+            "| M1 · Text statistics | in progress | [#20 · queued](work/specs/20.md) | - |", index
         )
         self.assertIn("| M0 · Bootstrap (by hand) | done | - | #3 |", index)
         self.assertIn("| M2 · Slugs | planned | - | - |", index)
-        self.assertIn("**Milestone:** M1", self.note("specs/20.md"))
-        roadmap = self.note("docs/roadmap.md")
-        self.assertIn("see [#21](../tickets/21.md)", roadmap)
+        self.assertIn("**Milestone:** M1", self.note("work/specs/20.md"))
+        roadmap = self.note("product/roadmap.md")
+        self.assertIn("see [#21](../work/tickets/21.md)", roadmap)
+        product = self.note("product/index.md")
+        self.assertIn(
+            "| M1 · Text statistics | in progress | [#20 · queued](../work/specs/20.md)", product
+        )
 
 
 class Safety(VaultTestCase):
@@ -101,7 +112,7 @@ class Safety(VaultTestCase):
             body="<script>alert(1)</script>\n\n```html\n<b>kept</b>\n```\n\nand `<i>` too",
         )
         self.build()
-        t = self.note("tickets/24.md")
+        t = self.note("work/tickets/24.md")
         self.assertIn("&lt;script>alert(1)&lt;/script>", t)
         self.assertNotIn("<script>", t)
         self.assertIn("<b>kept</b>", t)
@@ -111,7 +122,7 @@ class Safety(VaultTestCase):
         body = "[a](javascript:alert(1)) [b]( JavaScript:x) ![c](data:text/html,x)\n[d]: vbscript:y"
         self.add_issue(27, title="Links", body=body + "\n\n`[e](javascript:kept)`")
         self.build()
-        t = self.note("tickets/27.md")
+        t = self.note("work/tickets/27.md")
         self.assertNotRegex(t.split("`[e]")[0], r"(?i)\]\(\s*javascript:|data:text|vbscript:")
         self.assertIn("[a](#unsafe-javascript-alert(1))", t)
         self.assertIn("[d]: #unsafe-vbscript-y", t)
@@ -120,7 +131,7 @@ class Safety(VaultTestCase):
     def test_issue_refs_are_not_linked_inside_code(self) -> None:
         self.add_issue(25, title="Refs", body="See #21 but not `#21` nor #999.")
         self.build()
-        t = self.note("tickets/25.md")
+        t = self.note("work/tickets/25.md")
         self.assertIn("See [#21](21.md) but not `#21` nor #999.", t)
 
     def test_refuses_a_folder_it_did_not_make(self) -> None:
@@ -131,22 +142,22 @@ class Safety(VaultTestCase):
 
     def test_rebuild_removes_stale_notes(self) -> None:
         self.build()
-        self.write(self.out, "tickets/99.md", "stale")
+        self.write(self.out, "work/tickets/99.md", "stale")
         self.build()
-        self.assertFalse((self.out / "tickets/99.md").exists())
+        self.assertFalse((self.out / "work/tickets/99.md").exists())
 
 
 class DocsAndHistory(VaultTestCase):
-    def test_documents_keep_their_paths_and_history_is_not_a_document(self) -> None:
+    def test_documents_go_to_their_category_and_history_is_not_a_document(self) -> None:
         self.write(self.root, "docs/adr/0001-x.md", "# ADR 1\n\nAbout #20.\n")
         self.write(self.root, "GLOSSARY.md", "# Glossary\n")
         self.write(self.root, "docs/history/021-char-count.md", "---\nissue: 21\n---\n\n# x\n")
         notes = self.build()
-        self.assertIn("docs/adr/0001-x.md", notes)
-        self.assertIn("GLOSSARY.md", notes)
-        self.assertNotIn("docs/history/021-char-count.md", notes)
-        self.assertIn("About [#20](../../specs/20.md).", self.note("docs/adr/0001-x.md"))
-        self.assertIn("[adr/0001-x](docs/adr/0001-x.md)", self.note("index.md"))
+        self.assertIn("decisions/0001-x.md", notes)
+        self.assertIn("domain/GLOSSARY.md", notes)
+        self.assertNotIn("architecture/history/021-char-count.md", notes)
+        self.assertIn("About [#20](../work/specs/20.md).", self.note("decisions/0001-x.md"))
+        self.assertIn("[Decisions](decisions/index.md)", self.note("index.md"))
 
     def test_history_records_are_linked_both_ways(self) -> None:
         self.write(
@@ -160,14 +171,16 @@ class DocsAndHistory(VaultTestCase):
         self.build()
         record = self.note("history/021-char-count.md")
         self.assertIn('title: "Record · #21 Char count"', record)
-        self.assertIn("Issue note: [#21 Char count](../tickets/21.md)", record)
+        self.assertIn("Issue note: [#21 Char count](../work/tickets/21.md)", record)
         self.assertIn("&lt;img src=x", record)
-        ticket = self.note("tickets/21.md")
-        self.assertIn("**Record:** [021-char-count](../history/021-char-count.md)", ticket)
+        ticket = self.note("work/tickets/21.md")
+        self.assertIn("**Record:** [021-char-count](../../history/021-char-count.md)", ticket)
         self.assertIn("**PR:** [#1000](https://github.com/fake/repo/pull/1000) draft", ticket)
         self.assertIn(
-            "[#21 Char count](history/021-char-count.md) · ready · 2 rounds", self.note("index.md")
+            "[#21 Char count](history/021-char-count.md) · job · ready · 2 rounds",
+            self.note("index.md"),
         )
+        self.assertIn("[#21 Char count](021-char-count.md)", self.note("history/index.md"))
 
     def test_closed_with_merged_pr_is_done(self) -> None:
         pr = self.gh.create_pr("factory/023-typo", "main", "Typo", "Closes #23", draft=False)
@@ -176,8 +189,8 @@ class DocsAndHistory(VaultTestCase):
         self.add_issue(26, title="Won't do", body="no", labels=[])
         self.gh.close_issue(26)
         self.build()
-        self.assertIn("**Status:** done", self.note("tickets/23.md"))
-        self.assertIn("**Status:** closed", self.note("tickets/26.md"))
+        self.assertIn("**Status:** done", self.note("work/tickets/23.md"))
+        self.assertIn("**Status:** closed", self.note("work/tickets/26.md"))
 
 
 class DocLinks(VaultTestCase):
@@ -193,14 +206,14 @@ class DocLinks(VaultTestCase):
         vault.build(
             self.cfg, self.gh.all_issues(), self.gh.all_prs(), self.out, source_url="https://src"
         )
-        readme = self.note("README.md")
+        readme = self.note("product/README.md")
         self.assertIn("[license](https://src/LICENSE)", readme)
         self.assertIn("[design](https://src/plugin/DESIGN.md#jobs)", readme)
-        self.assertIn("[arch](docs/architecture.md)", readme)
-        self.assertIn("[adr](docs/adr/)", readme)
+        self.assertIn("[arch](../architecture/architecture.md)", readme)
+        self.assertIn("[adr](../decisions/)", readme)
         self.assertIn("[web](https://example.org) [top](#x) `[code](LICENSE)`", readme)
-        arch = self.note("docs/architecture.md")
-        self.assertIn("[up](../README.md) [mod](https://src/mod.py)", arch)
+        arch = self.note("architecture/architecture.md")
+        self.assertIn("[up](../product/README.md) [mod](https://src/mod.py)", arch)
 
     def test_github_source_from_origin(self) -> None:
         self.git(self.root, "remote", "set-url", "origin", "git@github.com:CTDes/textkit.git")
@@ -214,6 +227,78 @@ class DocLinks(VaultTestCase):
         )
         self.git(self.root, "remote", "set-url", "origin", "/tmp/elsewhere.git")
         self.assertIsNone(vault.github_source(self.cfg))
+
+
+class Categories(VaultTestCase):
+    def test_home_lists_every_category_with_counts(self) -> None:
+        self.write(self.root, "docs/adr/0001-x.md", "# x\n")
+        notes = self.build()
+        index = self.note("index.md")
+        for folder, title, _ in vault.CATEGORIES:
+            self.assertIn(f"{folder}/index.md", notes)
+            self.assertIn(f"[{title}]({folder}/index.md)", index)
+        self.assertIn("| 1 decision |", index)
+        self.assertIn("| 1 spec, 3 tickets |", index)
+
+    def test_documents_are_placed_by_their_repository_path(self) -> None:
+        cases = {
+            "README.md": "product/README.md",
+            "docs/brief.md": "product/brief.md",
+            "docs/requirements/api.md": "product/requirements/api.md",
+            "docs/roadmap.md": "product/roadmap.md",
+            "GLOSSARY.md": "domain/GLOSSARY.md",
+            "CLAUDE.md": "architecture/CLAUDE.md",
+            "docs/architecture.md": "architecture/architecture.md",
+            "docs/adr/0002-y.md": "decisions/0002-y.md",
+            "docs/runbook.md": "architecture/runbook.md",
+            "docs/index.md": "architecture/index-document.md",
+        }
+        for repo, wiki in cases.items():
+            self.assertEqual(vault.place_doc(repo), wiki, repo)
+
+    def test_decisions_table_reads_status_and_date(self) -> None:
+        self.write(
+            self.root,
+            "docs/adr/0001-a.md",
+            "# 0001 · Use A\n\n- Status: accepted\n- Date: 2026-11-01\n",
+        )
+        self.write(
+            self.root,
+            "docs/adr/0002-b.md",
+            "# 0002 · Use B\n\nDate: 2026-11-02 · Status: superseded by 0003\n",
+        )
+        self.write(self.root, "docs/adr/0003-c.md", "---\nstatus: proposed\n---\n# 0003 · Use C\n")
+        self.build()
+        page = self.note("decisions/index.md")
+        self.assertIn("| [0001 · Use A](0001-a.md) | accepted | 2026-11-01 |", page)
+        self.assertIn("| [0002 · Use B](0002-b.md) | superseded by 0003 | 2026-11-02 |", page)
+        self.assertIn("| [0003 · Use C](0003-c.md) | proposed | - |", page)
+
+    def test_domain_lists_glossary_terms_in_either_format(self) -> None:
+        self.write(
+            self.root,
+            "GLOSSARY.md",
+            "# Glossary\n\n**Slug**: a URL-safe name.\n_Avoid_: handle\n\n"
+            "| Term | Meaning |\n| --- | --- |\n| `word` | letters |\n",
+        )
+        self.build()
+        page = self.note("domain/index.md")
+        self.assertIn("## Terms (2)", page)
+        self.assertIn("- Slug", page)
+        self.assertIn("- word", page)
+        self.assertIn("| 2 terms |", self.note("index.md"))
+
+    def test_claude_md_is_how_to_work_here(self) -> None:
+        self.write(self.root, "CLAUDE.md", "# textkit\n\nRun checks.\n")
+        self.build()
+        self.assertIn(
+            "[How to work in this repository](CLAUDE.md) · `CLAUDE.md`",
+            self.note("architecture/index.md"),
+        )
+
+    def test_empty_category_says_so(self) -> None:
+        self.build()
+        self.assertIn("Nothing here yet.", self.note("decisions/index.md"))
 
 
 class Cli(VaultTestCase):

@@ -5,12 +5,16 @@
 from the repository (docs/, GLOSSARY.md, docs/history/) and from a snapshot of GitHub issues and
 PRs, so it can be thrown away and rebuilt at any time.
 
-    index.md                 milestones, what is going on, documents, recent history
-    board.md                 every spec and ticket grouped by status
-    specs/<n>.md             a spec: status, milestone, ticket table, dependency graph, description
-    tickets/<n>.md           a ticket: status, spec, blockers, PR, history, description
-    history/<job-id>.md      the job records committed by factory-job
-    docs/…, GLOSSARY.md      the repository's documents, same paths as in the repo
+What the project knows is grouped in categories, one folder each with an index note. The
+repository's files are not moved: only the wiki is organised this way (CATEGORIES, place_doc).
+
+    index.md                 the categories, milestones, what is going on, latest records
+    product/                 README, brief, requirements, roadmap (index: milestones)
+    domain/                  GLOSSARY.md (index: the terms)
+    architecture/            architecture.md, CLAUDE.md, any other document in docs/
+    decisions/               the ADRs (index: number, title, status, date)
+    work/                    index: the board; specs/<n>.md and tickets/<n>.md from GitHub
+    history/                 the job records committed by factory-job (index: every record)
 
 Text from GitHub (titles, bodies) and from agents (history) can contain HTML: every `<` outside
 code is escaped, so it renders as text. Links are relative markdown links, so they work in
@@ -39,6 +43,40 @@ MARKER = ".factory-vault"
 # Status, in the order the board shows them.
 # "done" is a closed issue with a merged PR or a job record; "closed" is any other closed one.
 STATUSES = ("working", "needs human", "needs info", "queued", "open", "done", "closed")
+
+# (folder, title, what it holds), in the order the home page lists them.
+CATEGORIES = (
+    ("product", "Product", "What we are building and why: brief, requirements, roadmap."),
+    ("domain", "Domain", "The project's language: the glossary."),
+    ("architecture", "Architecture", "How the code is organised and how to work in it."),
+    ("decisions", "Decisions", "Architecture decisions and why they were taken."),
+    ("work", "Work", "Specs and tickets, from GitHub, by status."),
+    ("history", "History", "How each job was planned, built and reviewed."),
+)
+
+
+def place_doc(rel: str) -> str:
+    """Where a repository document goes in the wiki (by its path in the repository)."""
+    fixed = {
+        "README.md": "product/README.md",
+        "docs/brief.md": "product/brief.md",
+        "docs/roadmap.md": "product/roadmap.md",
+        "GLOSSARY.md": "domain/GLOSSARY.md",
+        "CLAUDE.md": "architecture/CLAUDE.md",
+        "docs/architecture.md": "architecture/architecture.md",
+    }
+    if rel in fixed:
+        return fixed[rel]
+    if rel.startswith("docs/requirements/"):
+        return "product/" + rel.removeprefix("docs/")
+    if rel.startswith("docs/adr/"):
+        return "decisions/" + rel.removeprefix("docs/adr/")
+    placed = "architecture/" + rel.removeprefix("docs/")
+    # a document must not take the place of a category's index
+    if placed.endswith("/index.md") and placed.count("/") == 1:
+        placed = placed[: -len(".md")] + "-document.md"
+    return placed
+
 
 MILESTONE_RE = re.compile(
     r"^###\s+(M\d+)\s*·\s*(.+?)\s*(?:—|--)\s*status:\s*(.+?)\s*$", re.MULTILINE
@@ -139,7 +177,7 @@ class Item:
 
     @property
     def note(self) -> str:
-        return f"{self.kind}s/{self.number}.md"
+        return f"work/{self.kind}s/{self.number}.md"
 
     @property
     def label(self) -> str:
@@ -164,6 +202,7 @@ class Vault:
     histories: dict[str, dict[str, Any]]  # note path -> front matter
     docs: dict[str, Path]  # note path -> source file
     prs: dict[int, PullSummary]
+    doc_repo_path: dict[str, str] = field(default_factory=dict)  # note path -> path in the repo
 
 
 def status_of(cfg: Config, issue: Issue) -> str:
@@ -225,16 +264,20 @@ def collect(cfg: Config, issues: list[Issue], prs: list[PullSummary], title: str
             if isinstance(front.get("issue"), int):
                 by_issue_history[front["issue"]] = note
 
-    docs: dict[str, Path] = {}
+    sources: list[str] = [
+        n for n in ("README.md", "GLOSSARY.md", "CLAUDE.md") if (root / n).is_file()
+    ]
     if (root / "docs").is_dir():
         for p in sorted((root / "docs").rglob("*.md")):
             rel = p.relative_to(root).as_posix()
             if history_dir and (rel + "/").startswith(history_dir + "/"):
                 continue
-            docs[rel] = p
-    for name in ("GLOSSARY.md", "README.md"):
-        if (root / name).is_file():
-            docs[name] = root / name
+            sources.append(rel)
+    docs: dict[str, Path] = {}
+    doc_repo_path: dict[str, str] = {}
+    for rel in sources:
+        note = place_doc(rel)
+        docs[note], doc_repo_path[note] = root / rel, rel
 
     roadmap = root / "docs" / "roadmap.md"
     milestones = parse_milestones(roadmap.read_text(encoding="utf-8")) if roadmap.exists() else []
@@ -273,7 +316,7 @@ def collect(cfg: Config, issues: list[Issue], prs: list[PullSummary], title: str
             history=hist,
             milestone=milestone_of_spec.get(n) if kind == "spec" else None,
         )
-    return Vault(cfg, title, items, milestones, histories, docs, pr_by_number)
+    return Vault(cfg, title, items, milestones, histories, docs, pr_by_number, doc_repo_path)
 
 
 # ---------------------------------------------------------------- rendering
@@ -393,8 +436,9 @@ def render_item(v: Vault, item: Item) -> str:
 
 
 def render_board(v: Vault) -> str:
-    note = "board.md"
-    out = [_front({"title": "Board"}), "# Board", ""]
+    """The Work category's index: every spec and ticket grouped by status."""
+    note = "work/index.md"
+    out = [_front({"title": "Work"}), "# Work", "", _category_text("work"), ""]
     for status in STATUSES:
         group = sorted((i for i in v.items.values() if i.status == status), key=lambda i: -i.number)
         if not group:
@@ -412,44 +456,71 @@ def render_board(v: Vault) -> str:
                 f"| {_history_cell(note, i)} |"
             )
         out.append("")
-    if len(out) == 3:
+    if len(out) == 5:
         out += ["No issues yet.", ""]
     return "\n".join(out)
 
 
+def _category_text(folder: str) -> str:
+    return next(text for key, _, text in CATEGORIES if key == folder)
+
+
+def _milestone_rows(v: Vault, note: str) -> list[str]:
+    rows = ["| Milestone | Status | Spec | PR |", "| --- | --- | --- | --- |"]
+    for m in v.milestones:
+        spec = (
+            rel_link(note, v.items[m.spec].note, f"#{m.spec} · {v.items[m.spec].status}")
+            if m.spec in v.items
+            else (f"#{m.spec}" if m.spec else "-")
+        )
+        pr_data = v.prs.get(m.pr) if m.pr else None
+        pr = _pr_cell(pr_data) if pr_data else (f"#{m.pr}" if m.pr else "-")
+        rows.append(f"| {m.key} · {inline(m.title)} | {m.status} | {spec} | {pr} |")
+    return rows
+
+
+def _n(count: int, word: str) -> str:
+    return f"{count} {word}" + ("" if count == 1 else "s")
+
+
+def _category_count(v: Vault, folder: str) -> str:
+    docs = sum(1 for d in v.docs if d.startswith(folder + "/"))
+    if folder == "work":
+        specs = sum(1 for i in v.items.values() if i.kind == "spec")
+        return f"{_n(specs, 'spec')}, {_n(len(v.items) - specs, 'ticket')}"
+    if folder == "history":
+        return _n(len(v.histories), "record")
+    if folder == "decisions":
+        return _n(docs, "decision")
+    if folder == "domain":
+        return _n(len(_glossary_terms(v)), "term")
+    return _n(docs, "document")
+
+
 def render_index(v: Vault, sha: str) -> str:
     note = "index.md"
+    counts = " · ".join(
+        f"{s}: {n}" for s in STATUSES if (n := sum(1 for i in v.items.values() if i.status == s))
+    )
     out = [
         _front({"title": v.title}),
         f"# {inline(v.title)}",
         "",
-        f"Built from `{sha}` on {now()[:16].replace('T', ' ')}. "
-        + rel_link(note, "board.md", "Board")
-        + " · "
-        + " · ".join(
-            f"{s}: {n}"
-            for s in STATUSES
-            if (n := sum(1 for i in v.items.values() if i.status == s))
-        ),
+        f"Built from `{sha}` on {now()[:16].replace('T', ' ')}."
+        + (f" Work: {counts}." if counts else ""),
         "",
+        "## What we know",
+        "",
+        "| Category | What it holds | |",
+        "| --- | --- | --- |",
     ]
+    for folder, title, text in CATEGORIES:
+        out.append(
+            f"| {rel_link(note, f'{folder}/index.md', title)} | {text} | {_category_count(v, folder)} |"
+        )
+    out.append("")
     if v.milestones:
-        out += [
-            "## Milestones",
-            "",
-            "| Milestone | Status | Spec | PR |",
-            "| --- | --- | --- | --- |",
-        ]
-        for m in v.milestones:
-            spec = (
-                rel_link(note, v.items[m.spec].note, f"#{m.spec} · {v.items[m.spec].status}")
-                if m.spec in v.items
-                else (f"#{m.spec}" if m.spec else "-")
-            )
-            pr_data = v.prs.get(m.pr) if m.pr else None
-            pr = _pr_cell(pr_data) if pr_data else (f"#{m.pr}" if m.pr else "-")
-            out.append(f"| {m.key} · {inline(m.title)} | {m.status} | {spec} | {pr} |")
-        out.append("")
+        out += ["## Milestones", "", *_milestone_rows(v, note), ""]
     active = [i for i in v.items.values() if i.status in ("working", "needs human", "needs info")]
     if active:
         out += ["## Now", ""]
@@ -458,22 +529,103 @@ def render_index(v: Vault, sha: str) -> str:
             for i in sorted(active, key=lambda i: i.number)
         ]
         out.append("")
-    if v.docs:
-        out += ["## Documents", ""]
-        out += [f"- {rel_link(note, d, d.removeprefix('docs/')[:-3])}" for d in sorted(v.docs)]
-        out.append("")
     if v.histories:
-        recent = sorted(
-            v.histories.items(), key=lambda kv: str(kv[1].get("updated") or ""), reverse=True
-        )[:10]
-        out += ["## Latest job records", ""]
-        for path, front in recent:
-            label = inline(f"#{front.get('issue', '?')} {front.get('title', path)}")
-            out.append(
-                f"- {rel_link(note, path, label)} · {front.get('stage', '?')} · "
-                f"{front.get('rounds', '?')} rounds · {str(front.get('updated') or '')[:10]}"
-            )
-        out.append("")
+        out += ["## Latest job records", "", *_record_lines(v, note, limit=5), ""]
+    return "\n".join(out)
+
+
+def _record_lines(v: Vault, note: str, limit: int | None = None) -> list[str]:
+    recent = sorted(
+        v.histories.items(), key=lambda kv: str(kv[1].get("updated") or ""), reverse=True
+    )
+    lines = []
+    for path, front in recent[:limit]:
+        label = inline(f"#{front.get('issue', '?')} {front.get('title', path)}")
+        lines.append(
+            f"- {rel_link(note, path, label)} · {front.get('kind', 'job')} · "
+            f"{front.get('stage', '?')} · {front.get('rounds', '?')} rounds · "
+            f"{str(front.get('updated') or '')[:10]}"
+        )
+    return lines
+
+
+def _doc_title(path: Path, fallback: str) -> str:
+    if path.name == "CLAUDE.md":  # its heading is the project's name, which says nothing here
+        return "How to work in this repository"
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("# "):
+                return line[2:].strip()
+    except OSError:
+        pass
+    return fallback
+
+
+def _doc_list(v: Vault, note: str, folder: str) -> list[str]:
+    docs = sorted(d for d in v.docs if d.startswith(folder + "/"))
+    return [
+        f"- {rel_link(note, d, inline(_doc_title(v.docs[d], d.split('/')[-1][:-3])))}"
+        f" · `{v.doc_repo_path[d]}`"
+        for d in docs
+    ]
+
+
+def _adr_facts(path: Path) -> tuple[str, str]:
+    """Status and date from an ADR's first lines: `Status: x`, `Date: y`, in any of the usual
+    shapes (front matter, a list, one line with both)."""
+    head = "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[:20])
+    status = re.search(r"(?im)\bstatus\b\**\s*[:=]\s*\**\s*([^·|\n*]+)", head)
+    date = re.search(r"(?im)\bdate\b\**\s*[:=]\s*\**\s*(\d{4}-\d{2}-\d{2})", head)
+    return (
+        status.group(1).strip() if status else "-",
+        date.group(1) if date else "-",
+    )
+
+
+def _glossary_terms(v: Vault) -> list[str]:
+    """Terms in GLOSSARY.md: `**Term**:` lines (domain-modeling) or the first column of a table."""
+    path = v.docs.get("domain/GLOSSARY.md")
+    if path is None:
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    terms = re.findall(r"(?m)^\s*[-*]?\s*\*\*([^*]+?)\*\*\s*:", text)
+    for row in re.findall(r"(?m)^\|\s*([^|]+?)\s*\|", text):
+        if row.lower() not in ("term", "termino", "término") and not set(row) <= set("-: "):
+            terms.append(row.strip("`* "))
+    return list(dict.fromkeys(t.strip() for t in terms if t.strip()))
+
+
+def render_category(v: Vault, folder: str) -> str:
+    """The index note of a category (Work's is the board, see render_board)."""
+    title = next(t for key, t, _ in CATEGORIES if key == folder)
+    note = f"{folder}/index.md"
+    out = [_front({"title": title}), f"# {title}", "", _category_text(folder), ""]
+    if folder == "product" and v.milestones:
+        out += ["## Milestones", "", *_milestone_rows(v, note), ""]
+    if folder == "domain":
+        terms = _glossary_terms(v)
+        if terms:
+            glossary = rel_link(note, "domain/GLOSSARY.md", "glossary")
+            out += [f"## Terms ({len(terms)})", "", f"Defined in the {glossary}.", ""]
+            out += [f"- {inline(t)}" for t in terms]
+            out.append("")
+    if folder == "decisions":
+        adrs = sorted(d for d in v.docs if d.startswith("decisions/"))
+        if adrs:
+            out += ["| Decision | Status | Date |", "| --- | --- | --- |"]
+            for d in adrs:
+                status, date = _adr_facts(v.docs[d])
+                label = inline(_doc_title(v.docs[d], d.split("/")[-1][:-3]))
+                out.append(f"| {rel_link(note, d, label)} | {inline(status)} | {date} |")
+            out.append("")
+    elif folder != "history":
+        docs = _doc_list(v, note, folder)
+        if docs:
+            out += ["## Documents", "", *docs, ""]
+    if folder == "history" and v.histories:
+        out += [*_record_lines(v, note), ""]
+    if len(out) == 5:
+        out += ["Nothing here yet.", ""]
     return "\n".join(out)
 
 
@@ -507,25 +659,43 @@ def _prepare(out: Path) -> None:
 _DOC_LINK = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 
 
-def relink_docs(note: str, text: str, notes: set[str], source_url: str | None) -> str:
-    """A relative link from a document to a repository file the wiki does not have (LICENSE,
-    code, other READMEs) points at that file in the repository instead of a missing page."""
-    if not source_url:
-        return text
-    folders = {posixpath.dirname(n) for n in notes}
+def relink_docs(
+    note: str, repo_path: str, text: str, placed: dict[str, str], source_url: str | None
+) -> str:
+    """Relative links in a document, written for the repository, made right for the wiki.
+
+    `placed` maps repository paths to wiki notes. A link to a document the wiki has points at its
+    note; to a folder of them, at that folder; to any other repository file (LICENSE, code), at
+    the file in the repository (`source_url`), or stays as written without one."""
+
+    def target_for(resolved: str) -> str | None:
+        for candidate in (resolved, f"{resolved}.md"):
+            if candidate in placed:
+                return placed[candidate]
+        prefix = resolved.rstrip("/") + "/"
+        for repo, wiki in placed.items():
+            suffix = repo[len(prefix) :]
+            if repo.startswith(prefix) and wiki.endswith("/" + suffix):
+                return wiki[: -len(suffix)]  # the folder, with its trailing slash
+        return None
 
     def fix(m: re.Match[str]) -> str:
         target = m.group(2)
         if re.match(r"^[a-zA-Z][\w+.-]*:", target) or target.startswith(("#", "/")):
             return m.group(0)
         path, _, anchor = target.partition("#")
-        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(note), path))
-        if resolved.startswith("..") or resolved in notes or resolved.rstrip("/") in folders:
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(repo_path), path))
+        if resolved.startswith(".."):
             return m.group(0)
-        if f"{resolved}.md" in notes:
-            return m.group(0)
-        url = f"{source_url}/{resolved}" + (f"#{anchor}" if anchor else "")
-        return f"{m.group(1)}{url}{m.group(3)}"
+        tail = f"#{anchor}" if anchor else ""
+        wiki = target_for(resolved)
+        if wiki is not None:
+            rel = posixpath.relpath(wiki, posixpath.dirname(note) or ".")
+            rel += "/" if wiki.endswith("/") and not rel.endswith("/") else ""
+            return f"{m.group(1)}{rel}{tail}{m.group(3)}"
+        if source_url:
+            return f"{m.group(1)}{source_url}/{resolved}{tail}{m.group(3)}"
+        return m.group(0)
 
     return _outside_code(text, lambda part: _DOC_LINK.sub(fix, part))
 
@@ -560,17 +730,22 @@ def build(
     _prepare(out)
     notes: dict[str, str] = {
         "index.md": render_index(v, sha),
-        "board.md": render_board(v),
+        "work/index.md": render_board(v),
     }
+    for folder, _, _ in CATEGORIES:
+        if folder != "work":
+            notes[f"{folder}/index.md"] = render_category(v, folder)
     for item in v.items.values():
         notes[item.note] = render_item(v, item)
     history_dir = str(cfg.data.get("history_dir") or "").strip("/")
     for note in v.histories:
         notes[note] = render_history(v, note, cfg.root / history_dir / note.split("/", 1)[1])
-    all_notes = set(notes) | set(v.docs)
+    placed = {repo: note for note, repo in v.doc_repo_path.items()}
+    if history_dir:
+        placed.update({f"{history_dir}/{n.split('/', 1)[1]}": n for n in v.histories})
     for note, src in v.docs.items():
         text = _linkify(v, note, src.read_text(encoding="utf-8", errors="replace"))
-        notes[note] = relink_docs(note, text, all_notes, source_url)
+        notes[note] = relink_docs(note, v.doc_repo_path[note], text, placed, source_url)
     for note, text in notes.items():
         path = out / note
         path.parent.mkdir(parents=True, exist_ok=True)
