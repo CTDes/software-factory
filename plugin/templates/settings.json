@@ -27,8 +27,5 @@
       "source": { "source": "github", "repo": "CTDes/software-factory" },
       "autoUpdate": true
     }
-  },
-  "enabledPlugins": {
-    "software-factory@ctdes-factory": true
   }
 }

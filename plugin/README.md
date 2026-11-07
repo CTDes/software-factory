@@ -20,7 +20,7 @@ factory-init --labels      # inside a Claude Code session: the plugin puts it on
 
 `factory-init` writes what is missing (`factory/config.json`, `factory/checks.sh`, the CI
 workflow, `.worktreeinclude`, `CLAUDE.md`, `GLOSSARY.md`, `docs/architecture.md`), merges
-`.gitignore` and `.claude/settings.json` (permissions, marketplace, plugin) and creates the
+`.gitignore` and `.claude/settings.json` (permissions, marketplace) and creates the
 labels. Only `factory/checks.sh`, `factory/config.json` and the context files are
 project-specific; everything else comes from the plugin.
 
@@ -71,18 +71,24 @@ CI, set `FACTORY_EVENTS_URL` and `FACTORY_EVENTS_TOKEN` instead. Details: DESIGN
 
 The version in `.claude-plugin/plugin.json` gates updates: bump it to publish a change.
 
-Repositories prepared with `factory-init` declare the `ctdes-factory` marketplace with
-`autoUpdate: true`, so Claude Code picks up new versions by itself a few minutes into a session
-(`Plugin updated … Run /reload-plugins to apply`). To update by hand:
+The plugin is installed once per user and machine (`claude plugin install`, above), not per
+repository: `factory-init` declares the marketplace in each repository's settings but does not
+enable the plugin there. Enabling it in a project's `.claude/settings.json` would create a
+separate project-scope install for that repository, one more copy that falls behind.
+
+The marketplace is declared with `autoUpdate: true`, so Claude Code picks up new versions by
+itself a few minutes into a session (`Plugin updated … Run /reload-plugins to apply`).
+`claude plugin list` shows the installed version. To update by hand:
 
 ```sh
 claude plugin marketplace update ctdes-factory
-claude plugin update software-factory@ctdes-factory                    # user-scope install
-claude plugin update software-factory@ctdes-factory --scope project    # run inside each repo
+claude plugin update software-factory@ctdes-factory
 ```
 
-Opening a repository whose `.claude/settings.json` enables the plugin creates a project-scope
-install besides your user-scope one; each is updated separately when done by hand.
+On a new machine, or for someone else working on the repository, run the two install commands
+once. Repositories prepared before 0.5.2 enabled the plugin per project: remove
+`enabledPlugins` from their `.claude/settings.json` and run
+`claude plugin uninstall software-factory@ctdes-factory --scope project` inside each.
 
 ## Requirements
 

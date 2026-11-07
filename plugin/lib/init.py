@@ -71,7 +71,7 @@ def merge_settings(existing: dict[str, Any], template: dict[str, Any]) -> dict[s
     for key in ("allow", "deny"):
         perms[key] = _merge_list(list(perms.get(key) or []), template["permissions"][key])
     out["permissions"] = perms
-    for key in ("extraKnownMarketplaces", "enabledPlugins"):
+    for key in ("extraKnownMarketplaces",):
         merged = dict(out.get(key) or {})
         merged.update(template[key])
         out[key] = merged
@@ -188,7 +188,7 @@ def init(root: Path, base: str | None, force: bool, labels: bool) -> list[str]:
     if merged != existing:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
-        report.append("updated  .claude/settings.json (permissions, marketplace, plugin)")
+        report.append("updated  .claude/settings.json (permissions, marketplace)")
     else:
         report.append("kept     .claude/settings.json")
 

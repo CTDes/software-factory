@@ -75,7 +75,7 @@ plugin software-factory/                (installed under ~/.claude/plugins/cache
   .worktreeinclude                       untracked files every worktree needs (.env…)
   .gitignore                             adds factory/jobs/ and .claude/worktrees/
   .github/workflows/checks.yml           runs factory/checks.sh; required check on the base branch
-  .claude/settings.json                  pre-approved permissions, marketplace, plugin enabled
+  .claude/settings.json                  pre-approved permissions, marketplace (plugin installed per user)
   factory/
     checks.sh                            PROJECT-SPECIFIC · lint, typecheck, tests, build
     config.json                          PROJECT-SPECIFIC · see config.json
@@ -533,7 +533,8 @@ It touches no GitHub state: a milestone becomes an issue only when its spec is w
   `CLAUDE.md`, `GLOSSARY.md`, `docs/architecture.md`. The `checks.sh` template fails until the
   project replaces it.
 - Merges `.gitignore` and `.claude/settings.json` (permissions, the `ctdes-factory` marketplace
-  with `autoUpdate`, the plugin enabled) instead of replacing them.
+  with `autoUpdate`) instead of replacing them. It does not enable the plugin: it is installed
+  once per user (see 0.5.2).
 - Appends a `## Software factory` section to an existing `CLAUDE.md` that does not mention
   `factory/checks.sh`.
 - Warns about other workflows in `.github/workflows/`: the required check must run `checks.sh`.
@@ -634,11 +635,11 @@ before it was applied.
 - Plugin agents ignore `hooks` and `permissionMode` in their frontmatter: the guardrails live in
   the plugin's `hooks/hooks.json`, and the guard derives the role from `agent_type`.
 - Plugins cannot ship permissions: `factory-init` writes them into each repository's
-  `.claude/settings.json`, together with the marketplace (with `autoUpdate`) and the enabled
-  plugin.
+  `.claude/settings.json`, together with the marketplace (with `autoUpdate`) and, until 0.5.2,
+  the enabled plugin.
 - Opening a repository whose `settings.json` enables the plugin creates a project-scope install
-  besides the user-scope one. With `autoUpdate` both update on their own; by hand, each with its
-  own `claude plugin update … --scope`.
+  besides the user-scope one, updated separately (superseded in 0.5.2: the plugin is no longer
+  enabled per project).
 - Names: agents `software-factory:<agent>`, skills `/software-factory:<skill>`, executables
   `factory-job`, `factory-gate`, `factory-init`.
 
@@ -689,6 +690,10 @@ before it was applied.
   - Roadmaps start with a milestone 0 built by hand: scaffold, the real `factory/checks.sh` and
     CI. The factory cannot build it, because `factory/**` and `.github/**` are protected and the
     gate judges with the base branch's `checks.sh`.
+- 0.5.2, `factory-init` no longer enables the plugin in the project's settings, only declares
+  the marketplace. Each repository that enabled it had its own project-scope install, and those
+  stayed on 0.4.x while the user-scope install reached 0.5.1. One install per user keeps a
+  single copy up to date; the cost is a one-time `claude plugin install` per machine or person.
 
 ## References
 

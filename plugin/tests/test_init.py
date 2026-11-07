@@ -53,7 +53,9 @@ class InitTest(unittest.TestCase):
         self.assertEqual(settings["theme"], "dark")
         self.assertIn("Bash(npm test)", settings["permissions"]["allow"])
         self.assertIn("Bash(factory-job *)", settings["permissions"]["allow"])
-        self.assertTrue(settings["enabledPlugins"]["software-factory@ctdes-factory"])
+        # The plugin is installed once per user, not enabled per project: a project-scope
+        # install would be one more copy to update.
+        self.assertNotIn("enabledPlugins", settings)
         self.assertEqual(
             settings["extraKnownMarketplaces"]["ctdes-factory"]["source"]["repo"],
             "CTDes/software-factory",
