@@ -67,9 +67,19 @@ def _outside_code(text: str, fn: Any) -> str:
     return "\n".join(out)
 
 
+# A link target or reference definition that would run code when clicked.
+_UNSAFE_URL = re.compile(r"(\]\(\s*|^\s*\[[^\]]*\]:\s*)(javascript|vbscript|data):", re.IGNORECASE)
+
+
 def escape_html(text: str) -> str:
-    """`<` outside code becomes `&lt;`: external text never becomes markup."""
-    return _outside_code(text, lambda s: s.replace("<", "&lt;"))
+    """External text never becomes markup: `<` outside code becomes `&lt;` and link targets
+    with a javascript:, vbscript: or data: scheme are defused."""
+
+    def fn(s: str) -> str:
+        s = s.replace("<", "&lt;")
+        return _UNSAFE_URL.sub(lambda m: f"{m.group(1)}#unsafe-{m.group(2).lower()}-", s)
+
+    return _outside_code(text, fn)
 
 
 def inline(text: str) -> str:

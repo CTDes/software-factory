@@ -107,6 +107,16 @@ class Safety(VaultTestCase):
         self.assertIn("<b>kept</b>", t)
         self.assertIn("`<i>`", t)
 
+    def test_script_link_targets_are_defused(self) -> None:
+        body = "[a](javascript:alert(1)) [b]( JavaScript:x) ![c](data:text/html,x)\n[d]: vbscript:y"
+        self.add_issue(27, title="Links", body=body + "\n\n`[e](javascript:kept)`")
+        self.build()
+        t = self.note("tickets/27.md")
+        self.assertNotRegex(t.split("`[e]")[0], r"(?i)\]\(\s*javascript:|data:text|vbscript:")
+        self.assertIn("[a](#unsafe-javascript-alert(1))", t)
+        self.assertIn("[d]: #unsafe-vbscript-y", t)
+        self.assertIn("`[e](javascript:kept)`", t)
+
     def test_issue_refs_are_not_linked_inside_code(self) -> None:
         self.add_issue(25, title="Refs", body="See #21 but not `#21` nor #999.")
         self.build()
