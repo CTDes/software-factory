@@ -130,15 +130,44 @@ When a change in an existing project is too big for one PR, use a single spec fo
 
 ## Skills for the human
 
-| Skill | Use |
-| --- | --- |
-| `/software-factory:setup` | Prepare a repository, new or existing, until the factory can take its first job |
-| `/software-factory:to-roadmap` | Turn a project-level conversation into `docs/roadmap.md`: milestones, one spec each |
-| `/software-factory:to-spec` | Turn a conversation into a spec issue |
-| `/software-factory:to-tickets` | Break an approved spec into child tickets with `Parent:` / `Blocked by:` |
-| `/software-factory:grilling` | Stress-test a plan or idea |
-| `/software-factory:domain-modeling` | Build `GLOSSARY.md` and ADRs |
-| `/software-factory:retro` | Run a retrospective on a coding session |
+The factory never runs these; you do. They sit at the two ends of the work: thinking and
+writing it down before the factory builds, and learning from it after. Listed in the order they
+first come up:
+
+| Skill | Use | When | Level |
+| --- | --- | --- | --- |
+| `/software-factory:setup` | Prepare a repository, new or existing, until the factory can take its first job | Once per repository | Repository |
+| `/software-factory:grilling` | Stress-test a plan or idea | Before each spec, and before any issue that is still fuzzy | Project, feature or issue |
+| `/software-factory:domain-modeling` | Build `GLOSSARY.md` and ADRs | Whenever a new term or a hard-to-reverse decision comes up, usually right after a grilling | Cross-cutting |
+| `/software-factory:to-roadmap` | Turn a project-level conversation into `docs/roadmap.md`: milestones, one spec each | At the start of a new project; `to-roadmap update` after each milestone | Project |
+| `/software-factory:to-spec` | Turn a conversation into a spec issue | Once per milestone, or per change too big for one PR | Feature |
+| `/software-factory:to-tickets` | Break an approved spec into child tickets with `Parent:` / `Blocked by:` | Right after `to-spec` | Feature |
+| `/software-factory:retro` | Run a retrospective on a coding session | After each milestone or session | The factory itself |
+
+### In what order
+
+`setup` comes first, once. In a new project it runs the first three steps itself: an interview
+(a project-level grilling) into `docs/brief.md`, then `domain-modeling`, then `to-roadmap`, and
+milestone 0 by hand.
+
+After that, every milestone (or big change in an existing project) follows the same loop:
+
+```text
+grilling → (domain-modeling) → to-spec → to-tickets → approve (ready-for-agent on spec + children)
+  → factory spec <n> → test and merge the spec PR → retro → to-roadmap update → next milestone
+```
+
+Small changes skip the spec:
+
+```text
+(grilling if fuzzy) → write the issue → ready-for-agent → factory issue <n> / factory run
+  → review and merge the PR → (retro)
+```
+
+The rule behind the order: think (`grilling`), fix the words and decisions (`domain-modeling`),
+write it down as work (`to-spec`, `to-tickets`), approve with labels, let the factory build, test
+and merge by hand, then feed what you learned back into the context (`retro`) and re-plan
+(`to-roadmap update`). Each step is detailed in [Two ways to work](#two-ways-to-work).
 
 `tdd`, `code-review`, `grilling`, `domain-modeling`, `to-spec`, `to-tickets` and `retro` are
 adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill folder
